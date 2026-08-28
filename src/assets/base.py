@@ -21,11 +21,21 @@ A = TypeVar("A", bound=Action)
 P = TypeVar("P", bound=Params)
 
 
+class Model(ABC, Generic[S, A, P]):
+    def __init__(self, params: P):
+        self.params = params
+
+    @abstractmethod
+    def next_state(self, state: S, action: A) -> S:
+        raise NotImplementedError
+
+
 class Asset(ABC, Generic[S, A, P]):
     def __init__(self, params: P):
         self.params = params
         self.state_space: list[S] = self.get_state_space()
         self.action_space: list[A] = self.get_action_space()
+        self.model: Model[S, A, P] = self.get_model()
 
     @property
     @abstractmethod
@@ -41,7 +51,11 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     @abstractmethod
-    def get_available_actions(self, state: S, params: P, time_step: int) -> list[A]:
+    def get_model(self) -> Model[S, A, P]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_available_actions(self, state: S, time_step: int) -> list[A]:
         raise NotImplementedError
 
     @abstractmethod
@@ -56,5 +70,5 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     @abstractmethod
-    def cost_function(self, state: S, action: A, params: P, time_step: int) -> float:
+    def cost(self, state: S, next_state: S, action: A, time_step: int) -> float:
         raise NotImplementedError

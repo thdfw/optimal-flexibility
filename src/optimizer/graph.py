@@ -29,7 +29,7 @@ class Edge(Generic[S, A]):
 class Graph(Generic[S, A, P]):
     def __init__(self, asset: Asset[S, A, P]):
         self.asset = asset
-        self.params: P = asset.params
+        self.params = asset.params
         self.N = asset.params.horizon
         self.transitions = get_transitions_table(asset)
         self.create_nodes()
@@ -60,14 +60,12 @@ class Graph(Generic[S, A, P]):
             for node in self.nodes[time_step]:
                 self.edges[node] = []
 
-                available_actions = self.asset.get_available_actions(
-                    node.state, self.params, time_step
-                )
+                available_actions = self.asset.get_available_actions(node.state, time_step)
 
                 for action in available_actions:
                     next_state = self.transitions[(node.state, action)]
                     next_node = self.nodes_by[time_step + 1][next_state]
-                    cost = self.asset.cost_function(node.state, action, self.params, time_step)
+                    cost = self.asset.cost(node.state, next_state, action, time_step)
 
                     self.edges[node].append(Edge(node, next_node, cost, action))
 

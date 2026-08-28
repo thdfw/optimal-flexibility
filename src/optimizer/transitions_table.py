@@ -29,9 +29,7 @@ def _load_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P
     return transitions
 
 
-def _save_transitions_table[S: State, A: Action](
-    transitions: dict[tuple[S, A], S], path: Path
-) -> None:
+def _save_transitions_table[S: State, A: Action](transitions: dict[tuple[S, A], S], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     data = [
         {
@@ -43,13 +41,6 @@ def _save_transitions_table[S: State, A: Action](
     ]
     path.write_text(json.dumps(data, indent=2))
     print(f"Saved transitions table to {path}")
-
-
-def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
-    path = _transitions_path(asset)
-    if path.exists():
-        return _load_transitions_table(asset)
-    return _build_transitions_table(asset)
 
 
 def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
@@ -64,3 +55,10 @@ def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, 
     path = _transitions_path(asset)
     _save_transitions_table(transitions, path)
     return transitions
+
+
+def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
+    path = _transitions_path(asset)
+    if path.exists():
+        return _load_transitions_table(asset)
+    return _build_transitions_table(asset)
