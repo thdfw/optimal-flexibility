@@ -2,6 +2,7 @@ from ..base import Params
 
 
 class HeatPumpWaterTankParams(Params):
+    horizon: int = 48
     num_layers: int = 27
 
     storage_volume_gallons: float = 360
