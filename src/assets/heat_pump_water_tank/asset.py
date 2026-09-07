@@ -1,93 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
-from ..base import Action, Asset, Params, State
-from .model import HeatPumpWaterTankModel
+from ..base import Asset
+from .action import HeatPumpWaterTankAction
+from .params import HeatPumpWaterTankParams
+from .state import HeatPumpWaterTankState
 
-
-def fahrenheit_to_kelvin(temp_f: float) -> float:
-    return (temp_f - 32) * 5/9 + 273.15
-
-
-class HeatPumpWaterTankParams(Params):
-    num_layers: int = 27
-
-    storage_volume_gallons: float = 360
-    storage_losses_percent: float = 0.5
-    
-    hp_min_kw_elec: float = 0
-    hp_max_kw_elec: float = 9.66
-    hp_turn_on_minutes: int = 12
-
-    cop_intercept: float = 1.02
-    cop_oat_coeff: float = 0.0257
-    cop_lwt_coeff: float = 0
-    cop_min: float = 1.4
-    cop_min_oat_f: float = 15
-
-    max_hp_kwh_th: float = 25
-    max_load_kwh_th: float = 20
-
-    # RSWT penalty
-    rswt_penalty_enabled: bool = True
-    rswt_penalty_weight: float = 0.3
-    rswt_penalty_decay: float = 0.9
-    rswt_penalty_exponent_rate: float = 0.15
-    rswt_penalty_decay_max_hour: int = 12
-
-    # Initial state
-    initial_top_temp: float = 120
-    initial_middle_temp: float = 110
-    initial_bottom_temp: float = 100
-    initial_thermocline1: int = 1
-    initial_thermocline2: int = 2
-
-    # Forecasts
-    elec_usd_mwh: list[float]
-    rswt_f: list[float]
-    load_kwh: list[float]
-    oat_f: list[float]
-
-    def delta_T(self, swt: float) -> int:
-        return 20
-
-    def COP(self, oat: float) -> float:
-        if oat < self.cop_min_oat_f:
-            return self.cop_min
-        else:
-            return self.cop_intercept + self.cop_oat_coeff * oat
-
-
-class HeatPumpWaterTankState(State):
-    def __init__(
-        self, 
-        top_temp: float, 
-        middle_temp: float, 
-        bottom_temp: float, 
-        thermocline1: int, 
-        thermocline2: int, 
-        params: HeatPumpWaterTankParams,
-    ):
-        self.top_temp = top_temp
-        self.middle_temp = middle_temp
-        self.bottom_temp = bottom_temp
-        self.thermocline1 = thermocline1
-        self.thermocline2 = thermocline2
-        self.energy = self.get_energy(params)
-
-    def get_energy(self, params: HeatPumpWaterTankParams) -> float:
-        m_layer_kg = params.storage_volume_gallons * 3.785 / params.num_layers
-        kWh_top = self.thermocline1*m_layer_kg * 4.187/3600 * fahrenheit_to_kelvin(self.top_temp)
-        kWh_midlle = (self.thermocline2-self.thermocline1)*m_layer_kg * 4.187/3600 * fahrenheit_to_kelvin(self.middle_temp)
-        kWh_bottom = (params.num_layers-self.thermocline2)*m_layer_kg * 4.187/3600 * fahrenheit_to_kelvin(self.bottom_temp)
-        return kWh_top + kWh_midlle + kWh_bottom
-
-
-class HeatPumpWaterTankAction(Action):
-    def __init__(
-        self, 
-        heat_to_store_kwh: float
-    ):
-        self.heat_to_store_kwh = heat_to_store_kwh
+if TYPE_CHECKING:
+    from .model import HeatPumpWaterTankModel
 
 
 class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankAction, HeatPumpWaterTankParams]):
@@ -119,9 +42,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                         temperature_combinations.append((t,m,b))
         additional_temperature_combinations = [
             (165, 155, 150), (165, 155, 145),
-            (155, 145, 135), (155, 135, 120), 
+            (155, 145, 135), (155, 135, 120),
             (150, 145, 135),
-            (145, 135, 120), (145, 130, 115), 
+            (145, 135, 120), (145, 130, 115),
             (140, 135, 125), (140, 130, 125),
             (135, 120, 115), (135, 125, 115),
             (90, 80, 70)
@@ -148,25 +71,29 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 th1, th2 = th
                 if m==b and th1!=th2:
                     continue
-                state = HeatPumpWaterTankState(
+                state = HeatPumpWaterTankState.build(
                     top_temp=t,
                     middle_temp=m,
                     bottom_temp=b,
                     thermocline1=th1,
                     thermocline2=th2,
-                    params=self.params
+                    params=self.params,
                 )
                 states.append(state)
 
         print(f"=> Created a total of {len(states)} states")
-        self.max_state_energy = HeatPumpWaterTankState(180,180,180,self.params.num_layers,self.params.num_layers, self.params).energy
-        self.min_state_energy = HeatPumpWaterTankState(70,70,70,self.params.num_layers,self.params.num_layers, self.params).energy
+        self.max_state_energy = HeatPumpWaterTankState.build(
+            180, 180, 180, self.params.num_layers, self.params.num_layers, self.params
+        ).energy
+        self.min_state_energy = HeatPumpWaterTankState.build(
+            70, 70, 70, self.params.num_layers, self.params.num_layers, self.params
+        ).energy
         return states
 
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
         actions = []
         for heat_to_store_kwh in range(-int(self.params.max_load_kwh_th), int(self.params.max_hp_kwh_th+1)+1):
-            actions.append(HeatPumpWaterTankAction(heat_to_store_kwh))
+            actions.append(HeatPumpWaterTankAction(heat_to_store_kwh=heat_to_store_kwh))
         return actions
 
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
@@ -209,7 +136,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         # Electricity cost
         cost = elec_usd_kwh * action.heat_to_store_kwh/cop
-                    
+
         # RSWT penalty
         if action.heat_to_store_kwh<0 and load>0 and (state.top_temp<rswt or next_state.top_temp<rswt):
             if state.top_temp == next_state.top_temp:
@@ -228,10 +155,10 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 elif next_state.top_temp < temp_below_top_now:
                     swt = (state.top_temp + temp_below_top_now + next_state.top_temp)/3
                 else:
-                    swt = next_state.top_temp  
-                 
+                    swt = next_state.top_temp
+
             cost += self.rswt_penalty(time_step, swt, rswt)
-        
+
         return cost
 
     def rswt_penalty(self, time_step: int, swt: float, rswt: float) -> float:

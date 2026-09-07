@@ -1,7 +1,9 @@
 from logging import Logger, getLogger
 
 from ..base import Model
-from .heat_pump_water_tank import HeatPumpWaterTankAction, HeatPumpWaterTankParams, HeatPumpWaterTankState
+from .action import HeatPumpWaterTankAction
+from .params import HeatPumpWaterTankParams
+from .state import HeatPumpWaterTankState
 
 
 class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankAction, HeatPumpWaterTankParams]):
@@ -93,7 +95,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             while th2 < self.params.num_layers:
                 th1 += 1
                 th2 += 1
-                state = HeatPumpWaterTankState(t,m,b,th1,th2,self.params)
+                state = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params)
                 candidate_states.append(state)
                 self.logger.debug(f"Adding {state} to candidates {state.energy}")
                 if next_state_energy < state.energy:
@@ -118,7 +120,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             Otherwise the middle will also mix.
             '''
 
-            heated_bottom_energy = HeatPumpWaterTankState(t,m,b_heated,th1,th2,self.params).energy
+            heated_bottom_energy = HeatPumpWaterTankState.build(t,m,b_heated,th1,th2,self.params).energy
             b_layers = self.params.num_layers - th2
 
             # We will charge past the bottom layers
@@ -133,7 +135,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not heat up all bottom layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,b,th1,th2,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_heating_one_layer = (heated_bottom_energy-current_energy) / b_layers
                 layers_to_heat = (next_state_energy-current_energy) / energy_heating_one_layer
                 layers_to_heat = min(layers_to_heat, b_layers-1)
@@ -143,16 +145,16 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     if m < b_heated:
                         mixed_layers = th1 + b_layers_to_heat
                         mixed_temp = (t*th1 + b_heated*b_layers_to_heat) / mixed_layers
-                        state = HeatPumpWaterTankState(mixed_temp, m, b, mixed_layers, th2+b_layers_to_heat, self.params)
+                        state = HeatPumpWaterTankState.build(mixed_temp, m, b, mixed_layers, th2+b_layers_to_heat, self.params)
                     else:
                         mixed_layers = th2 + b_layers_to_heat
                         mixed_temp = (t*th1 + m*(th2-th1) + b_heated*b_layers_to_heat) / mixed_layers
-                        state = HeatPumpWaterTankState(mixed_temp, mixed_temp, b, mixed_layers, mixed_layers, self.params)
+                        state = HeatPumpWaterTankState.build(mixed_temp, mixed_temp, b, mixed_layers, mixed_layers, self.params)
                     candidate_states.append(state)
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
-        elif b_heated > t:
+        else:  # b_heated > t
             '''
             Heated water from the bottom is hotter than the top layer.
             Two main scenarios exist:
@@ -160,7 +162,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the bottom will be heated, we should determine how much of it will be
             '''
             
-            heated_bottom_energy = HeatPumpWaterTankState(t,m,b_heated,th1,th2,self.params).energy
+            heated_bottom_energy = HeatPumpWaterTankState.build(t,m,b_heated,th1,th2,self.params).energy
             b_layers = self.params.num_layers - th2
 
             # We will charge past the bottom layers
@@ -169,7 +171,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not heat up all bottom layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,b,th1,th2,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_heating_one_layer = (heated_bottom_energy-current_energy) / b_layers
                 layers_to_heat = (next_state_energy-current_energy) / energy_heating_one_layer
                 layers_to_heat = min(layers_to_heat, b_layers-1)
@@ -179,7 +181,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     # Node is (b_heated, t, m, b) => need to combine two adjacent layers
                     # Combine b_heated and t
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = (b_heated*b_layers_to_heat + t*th1) / (b_layers_to_heat + th1), 
                             middle_temp = m, 
                             bottom_temp = b, 
@@ -190,7 +192,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     )
                     # Combine t and m
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = b_heated, 
                             middle_temp = (t*th1 + m*(th2-th1))/th2, 
                             bottom_temp = b, 
@@ -201,7 +203,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     )
                     # Combine m and b
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = b_heated, 
                             middle_temp = t, 
                             bottom_temp = (m*(th2-th1)+b*(b_layers-b_layers_to_heat))/(th2-th1+b_layers-b_layers_to_heat), 
@@ -230,7 +232,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
             while th1 < self.params.num_layers:
                 th1 += 1
-                state = HeatPumpWaterTankState(t,m,m,th1,self.params.num_layers,self.params)
+                state = HeatPumpWaterTankState.build(t,m,m,th1,self.params.num_layers,self.params)
                 candidate_states.append(state)
                 self.logger.debug(f"Adding {state} to candidates {state.energy}")
                 # We will not heat up more middle layers
@@ -248,7 +250,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the middle will be heated, we should determine how much of it will be
             '''
 
-            heated_middle_energy = HeatPumpWaterTankState(t,m_heated,m_heated,th1,self.params.num_layers,self.params).energy
+            heated_middle_energy = HeatPumpWaterTankState.build(t,m_heated,m_heated,th1,self.params.num_layers,self.params).energy
             m_layers = self.params.num_layers - th1
 
             # We will charge past the middle layers
@@ -259,7 +261,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not heat up all middle layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,m,th1,self.params.num_layers,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,self.params.num_layers,self.params).energy
                 energy_heating_one_layer = (heated_middle_energy-current_energy) / m_layers
                 layers_to_heat = (next_state_energy-current_energy) / energy_heating_one_layer
                 layers_to_heat = min(layers_to_heat, m_layers-1)
@@ -268,12 +270,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 for m_layers_to_heat in [int(layers_to_heat), int(layers_to_heat)+1]:
                     mixed_layers = th1 + m_layers_to_heat
                     mixed_temp = (t*th1 + m_heated*m_layers_to_heat) / mixed_layers
-                    state = HeatPumpWaterTankState(mixed_temp, m, m, mixed_layers, self.params.num_layers, self.params)
+                    state = HeatPumpWaterTankState.build(mixed_temp, m, m, mixed_layers, self.params.num_layers, self.params)
                     candidate_states.append(state)
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))  
 
-        elif m_heated > t:
+        else:  # m_heated > t
             '''
             Heated water from the middle is hotter than the top layer.
             Two main scenarios exist:
@@ -281,7 +283,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the middle will be heated, we should determine how much of it will be
             '''
             
-            heated_middle_energy = HeatPumpWaterTankState(t,m_heated,m_heated,th1,self.params.num_layers,self.params).energy
+            heated_middle_energy = HeatPumpWaterTankState.build(t,m_heated,m_heated,th1,self.params.num_layers,self.params).energy
             m_layers = self.params.num_layers - th1
 
             # We will charge past the middle layers
@@ -290,7 +292,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not heat up all middle layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,m,th1,self.params.num_layers,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,self.params.num_layers,self.params).energy
                 energy_heating_one_layer = (heated_middle_energy-current_energy) / m_layers
                 layers_to_heat = (next_state_energy-current_energy) / energy_heating_one_layer
                 layers_to_heat = min(layers_to_heat, m_layers-1)
@@ -299,7 +301,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 for m_layers_to_heat in [int(layers_to_heat), int(layers_to_heat)+1]:
                     # Node is (m_heated, t, m) => new (t,m,b) case
                     if m_layers_to_heat == 0:
-                        state = HeatPumpWaterTankState(t, m, m, th1, th1, self.params)
+                        state = HeatPumpWaterTankState.build(t, m, m, th1, th1, self.params)
                     else:
                         state = self.charge_tmb(m_heated, t, m, m_layers_to_heat, m_layers_to_heat+th1, next_state_energy)         
                     candidate_states.append(state)
@@ -316,7 +318,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             2. Not all of the top will be heated, we should determine how much of it will be
         '''
 
-        heated_top_energy = HeatPumpWaterTankState(t_heated,t_heated,t_heated,self.params.num_layers,self.params.num_layers, self.params).energy
+        heated_top_energy = HeatPumpWaterTankState.build(t_heated,t_heated,t_heated,self.params.num_layers,self.params.num_layers, self.params).energy
         t_layers = self.params.num_layers
 
         # We will charge past the top layers
@@ -325,7 +327,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
         # We will not heat up all top layers
         else:
-            current_energy = HeatPumpWaterTankState(t,t,t,self.params.num_layers,self.params.num_layers, self.params).energy
+            current_energy = HeatPumpWaterTankState.build(t,t,t,self.params.num_layers,self.params.num_layers, self.params).energy
             energy_heating_one_layer = (heated_top_energy-current_energy) / t_layers
             layers_to_heat = (next_state_energy-current_energy) / energy_heating_one_layer
             layers_to_heat = min(layers_to_heat, t_layers-1)
@@ -334,7 +336,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             for t_layers_to_heat in [int(layers_to_heat), int(layers_to_heat)+1]:
                 # Node is (t_heated, t) => new (t,m) case
                 if t_layers_to_heat == 0:
-                    state = HeatPumpWaterTankState(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
+                    state = HeatPumpWaterTankState.build(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
                 else:
                     state = self.charge_tm(t_heated, t, t_layers_to_heat, next_state_energy)  
                 candidate_states.append(state)
@@ -380,7 +382,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             while th1 > 1:
                 th1 += -1
                 th2 += -1
-                state = HeatPumpWaterTankState(t,m,b,th1,th2,self.params)
+                state = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params)
                 candidate_states.append(state)
                 self.logger.debug(f"Adding {state} to candidates {state.energy}")
                 if next_state_energy > state.energy:
@@ -402,7 +404,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the top will be cooled, we should determine how much of it will be
             '''
 
-            cooled_top_energy = HeatPumpWaterTankState(t_cooled, m, b, th1, th2, self.params).energy
+            cooled_top_energy = HeatPumpWaterTankState.build(t_cooled, m, b, th1, th2, self.params).energy
             t_layers = th1
 
             # We will discharge past the top layers
@@ -411,7 +413,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,b,th1,th2,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy - current_energy) / t_layers
                 layers_to_cool = (next_state_energy - current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -421,7 +423,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     # Node is (t, m, b, t_cooled) => need to combine two adjacent layers
                     # Combine t and m
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = (t*(th1-t_layers_to_cool) + m*(th2-th1)) / (th2 - t_layers_to_cool), 
                             middle_temp = b, 
                             bottom_temp = t_cooled, 
@@ -432,7 +434,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     )
                     # Combine m and b
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = t, 
                             middle_temp = (m*(th2-th1) + b*(self.params.num_layers-th2)) / (self.params.num_layers-th1), 
                             bottom_temp = t_cooled, 
@@ -443,7 +445,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     )
                     # Combine b and t_cooled
                     candidate_states.append(
-                        HeatPumpWaterTankState(
+                        HeatPumpWaterTankState.build(
                             top_temp = t, 
                             middle_temp = m, 
                             bottom_temp = (b*(self.params.num_layers-th2) + t_cooled*t_layers_to_cool) / (self.params.num_layers-th2+t_layers_to_cool), 
@@ -455,7 +457,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
-        elif t_cooled > b:
+        else:  # t_cooled > b
             '''
             Cooled water from the top is still warmer than the bottom layer.
             Two main scenarios exist:
@@ -466,7 +468,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             Otherwise the middle will also mix.
             '''
 
-            cooled_top_energy = HeatPumpWaterTankState(t_cooled,m,b,th1,th2,self.params).energy
+            cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,m,b,th1,th2,self.params).energy
             t_layers = th1
 
             # We will discharge past the top layers
@@ -481,7 +483,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,b,th1,th2,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
                 layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -491,11 +493,11 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     if m > t_cooled:
                         mixed_layers = self.params.num_layers - th2 + t_layers_to_cool
                         mixed_temp = (b*(self.params.num_layers - th2) + t_cooled*t_layers_to_cool)/mixed_layers
-                        state = HeatPumpWaterTankState(t, m, mixed_temp, th1-t_layers_to_cool, th2-t_layers_to_cool, self.params)
+                        state = HeatPumpWaterTankState.build(t, m, mixed_temp, th1-t_layers_to_cool, th2-t_layers_to_cool, self.params)
                     else:
                         mixed_layers = self.params.num_layers - (th1 - t_layers_to_cool)
                         mixed_temp = (t_cooled*(t_layers_to_cool) + m*(th2-th1) + b*(self.params.num_layers-th2)) / mixed_layers
-                        state = HeatPumpWaterTankState(t, mixed_temp, mixed_temp, th1-t_layers_to_cool, th1-t_layers_to_cool, self.params)
+                        state = HeatPumpWaterTankState.build(t, mixed_temp, mixed_temp, th1-t_layers_to_cool, th1-t_layers_to_cool, self.params)
                     candidate_states.append(state)
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
@@ -518,7 +520,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
             while th1 > 1:
                 th1 += -1
-                state = HeatPumpWaterTankState(t,m,m,th1,self.params.num_layers,self.params)
+                state = HeatPumpWaterTankState.build(t,m,m,th1,self.params.num_layers,self.params)
                 candidate_states.append(state)
                 self.logger.debug(f"Adding {state} to candidates {state.energy}")
                 if next_state_energy > state.energy:
@@ -540,7 +542,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the top will be cooled, we should determine how much of it will be
             '''
 
-            cooled_top_energy = HeatPumpWaterTankState(t_cooled, m, m, th1, th1, self.params).energy
+            cooled_top_energy = HeatPumpWaterTankState.build(t_cooled, m, m, th1, th1, self.params).energy
             t_layers = th1
 
             # We will discharge past the top layers
@@ -549,7 +551,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,m,th1,th1,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy - current_energy) / t_layers
                 layers_to_cool = (next_state_energy - current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -558,14 +560,14 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 for t_layers_to_cool in [int(layers_to_cool), int(layers_to_cool)+1]:
                     # Node is (t, m, t_cooled) => new (t,m,b) case
                     if t_layers_to_cool == 0:
-                        state = HeatPumpWaterTankState(t, m, m, th1, th1, self.params)
+                        state = HeatPumpWaterTankState.build(t, m, m, th1, th1, self.params)
                     else:
                         state = self.discharge_tmb(t, m, t_cooled, th1-t_layers_to_cool, self.params.num_layers-t_layers_to_cool, next_state_energy)         
                     candidate_states.append(state)
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
-        elif t_cooled > m:
+        else:  # t_cooled > m
             '''
             Cooled water from the top is still warmer than the bottom layer.
             Two main scenarios exist:
@@ -573,7 +575,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 2. Not all of the top will be cooled, we should determine how much of it will be
             '''
 
-            cooled_top_energy = HeatPumpWaterTankState(t_cooled,m,m,th1,th1,self.params).energy
+            cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,m,m,th1,th1,self.params).energy
             t_layers = th1
 
             # We will discharge past the top layers
@@ -584,7 +586,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState(t,m,m,th1,th1,self.params).energy
+                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
                 layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -593,7 +595,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 for t_layers_to_cool in [int(layers_to_cool), int(layers_to_cool)+1]:
                     mixed_layers = self.params.num_layers - th1 + t_layers_to_cool
                     mixed_temp = (m*(self.params.num_layers - th1) + t_cooled*t_layers_to_cool)/mixed_layers
-                    state = HeatPumpWaterTankState(t, mixed_temp, mixed_temp, th1-t_layers_to_cool, th1-t_layers_to_cool, self.params)
+                    state = HeatPumpWaterTankState.build(t, mixed_temp, mixed_temp, th1-t_layers_to_cool, th1-t_layers_to_cool, self.params)
                     candidate_states.append(state)
 
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
@@ -601,7 +603,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def discharge_t(self, t, next_state_energy) -> HeatPumpWaterTankState:
         t_cooled = self.get_discharge_return_temp(t)
         if t_cooled==t:
-            return HeatPumpWaterTankState(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
+            return HeatPumpWaterTankState.build(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
         
         '''
         Cooled water can only be colder than the top layer.
@@ -610,7 +612,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             2. Not all of the top will be cooled, we should determine how much of it will be
         '''
 
-        cooled_top_energy = HeatPumpWaterTankState(t_cooled,t_cooled,t_cooled,self.params.num_layers,self.params.num_layers, self.params).energy
+        cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,t_cooled,t_cooled,self.params.num_layers,self.params.num_layers, self.params).energy
         t_layers = self.params.num_layers
 
         # We will discharge past the top layers
@@ -619,7 +621,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
         # We will not discharge all top layers
         else:
-            current_energy = HeatPumpWaterTankState(t,t,t,self.params.num_layers,self.params.num_layers, self.params).energy
+            current_energy = HeatPumpWaterTankState.build(t,t,t,self.params.num_layers,self.params.num_layers, self.params).energy
             energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
             layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
             layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -628,7 +630,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             for t_layers_to_cool in [int(layers_to_cool), int(layers_to_cool)+1]:
                 # Node is (t,t_cooled) => new (t,m) case
                 if t_layers_to_cool == 0:
-                    state = HeatPumpWaterTankState(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
+                    state = HeatPumpWaterTankState.build(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
                 else:
                     state = self.discharge_tm(t, t_cooled, self.params.num_layers-t_layers_to_cool, next_state_energy)  
                 candidate_states.append(state)
