@@ -14,6 +14,7 @@ class Action(BaseModel):
 
 class Params(BaseModel):
     horizon: int
+    timestep_hours: float = 1.0
 
 
 S = TypeVar("S", bound=State)

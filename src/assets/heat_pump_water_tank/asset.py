@@ -91,11 +91,14 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return states
 
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
+        dt = self.params.timestep_hours
+        max_load_kwh = self.params.max_load_kwh_th * dt
+        max_hp_kwh = self.params.max_hp_kwh_th * dt
         actions = []
         heat_to_store_kwh_range = [
             x/10 for x in range(
-                -int(self.params.max_load_kwh_th*10),
-                int((self.params.max_hp_kwh_th+1)*10) + 1
+                -int(max_load_kwh*10),
+                int((max_hp_kwh+1)*10) + 1
             )
         ]
         for heat_to_store_kwh in heat_to_store_kwh_range:
@@ -103,10 +106,18 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return actions
 
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
+        dt = self.params.timestep_hours
         load = self.params.load_kwh[time_step]
         losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy)
         cop = self.params.COP(self.params.oat_f[time_step])
-        max_hp_heat_out = self.params.hp_max_kw_elec * cop
+
+        if time_step==0:
+            turn_on_minutes = self.params.hp_turn_on_minutes if self.params.hp_currently_off else 0
+        else:
+            turn_on_minutes = self.params.hp_turn_on_minutes/2
+
+        max_hp_elec_in = (1-min(turn_on_minutes, dt*60)/(dt*60)) * self.params.hp_max_kw_elec * dt
+        max_hp_heat_out = max_hp_elec_in * cop
 
         hp_heat_out_levels = [0]
 
@@ -114,12 +125,14 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         heat_to_store_for_full = self.max_state_energy - state.energy
         hp_heat_out_for_full = heat_to_store_for_full + load + losses
 
-        if hp_heat_out_for_full < max_hp_heat_out:
-            hp_heat_out_levels = [0, hp_heat_out_for_full] if hp_heat_out_for_full > (5 if time_step==0 else 10) else [0]
-        else:
-            hp_heat_out_levels += [max_hp_heat_out]
+        min_charge_kwh = (self.params.hp_min_kw_first_step if time_step==0 else self.params.hp_min_kw_other_steps) * dt
 
-        # If the HP is already on, add the "meet the load" edge in the first hour
+        if hp_heat_out_for_full >= max_hp_heat_out:
+            hp_heat_out_levels += [max_hp_heat_out]
+        elif hp_heat_out_for_full > min_charge_kwh:
+            hp_heat_out_levels += [hp_heat_out_for_full]
+
+        # If the HP is already on, add the "meet the load" edge in the first step
         if time_step==0 and load>0 and not self.params.hp_currently_off:
             hp_heat_out_levels += [load+losses]
 
@@ -206,5 +219,6 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         weight = self.params.rswt_penalty_weight
         decay = self.params.rswt_penalty_decay
         max_hour = self.params.rswt_penalty_decay_max_hour
-        penalty = decay**(max_hour - min(time_step,max_hour)) * weight * np.exp(exponent_rate*(rswt-swt))
+        elapsed_hours = time_step * self.params.timestep_hours
+        penalty = decay**(max_hour - min(elapsed_hours, max_hour)) * weight * np.exp(exponent_rate*(rswt-swt))
         return penalty

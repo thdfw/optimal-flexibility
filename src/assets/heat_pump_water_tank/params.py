@@ -10,6 +10,8 @@ class HeatPumpWaterTankParams(Params):
 
     hp_min_kw_elec: float = 0
     hp_max_kw_elec: float = 9.66
+    hp_min_kw_first_step: float = 5
+    hp_min_kw_other_steps: float = 10
     hp_turn_on_minutes: int = 12
 
     cop_intercept: float = 1.02

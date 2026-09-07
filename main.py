@@ -4,14 +4,14 @@ from assets.heat_pump_water_tank import HeatPumpWaterTankAsset, HeatPumpWaterTan
 from optimizer.graph import Graph
 
 df = pd.read_csv('data/input_data.csv')
-horizon_hours = 48
+horizon_timesteps = 48
 
 params = HeatPumpWaterTankParams(
-    horizon=horizon_hours,
-    elec_usd_mwh = df['elec_usd_mwh'].tolist()[:horizon_hours],
-    rswt_f = df['rswt_f'].tolist()[:horizon_hours],
-    load_kwh = df['load_kwh'].tolist()[:horizon_hours],
-    oat_f = df['oat_f'].tolist()[:horizon_hours],
+    horizon=horizon_timesteps,
+    elec_usd_mwh = df['elec_usd_mwh'].tolist()[:horizon_timesteps],
+    rswt_f = df['rswt_f'].tolist()[:horizon_timesteps],
+    load_kwh = df['load_kwh'].tolist()[:horizon_timesteps],
+    oat_f = df['oat_f'].tolist()[:horizon_timesteps],
 )
 asset = HeatPumpWaterTankAsset(params)
 graph = Graph(asset)
