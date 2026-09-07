@@ -92,12 +92,46 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
         actions = []
-        for heat_to_store_kwh in range(-int(self.params.max_load_kwh_th), int(self.params.max_hp_kwh_th+1)+1):
+        heat_to_store_kwh_range = [
+            x/10 for x in range(
+                -int(self.params.max_load_kwh_th*10),
+                int((self.params.max_hp_kwh_th+1)*10) + 1
+            )
+        ]
+        for heat_to_store_kwh in heat_to_store_kwh_range:
             actions.append(HeatPumpWaterTankAction(heat_to_store_kwh=heat_to_store_kwh))
         return actions
 
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
-        raise NotImplementedError
+        load = self.params.load_kwh[time_step]
+        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy)
+        cop = self.params.COP(self.params.oat_f[time_step])
+        max_hp_heat_out = self.params.hp_max_kw_elec * cop
+
+        hp_heat_out_levels = [0]
+
+        # Can not put out more heat than what would fill the storage
+        heat_to_store_for_full = self.max_state_energy - state.energy
+        hp_heat_out_for_full = heat_to_store_for_full + load + losses
+
+        if hp_heat_out_for_full < max_hp_heat_out:
+            hp_heat_out_levels = [0, hp_heat_out_for_full] if hp_heat_out_for_full > (5 if time_step==0 else 10) else [0]
+        else:
+            hp_heat_out_levels += [max_hp_heat_out]
+
+        # If the HP is already on, add the "meet the load" edge in the first hour
+        if time_step==0 and load>0 and not self.params.hp_currently_off:
+            hp_heat_out_levels += [load+losses]
+
+        heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
+        actions = [
+            min(
+                self.action_space, 
+                key = lambda x: abs(x.heat_to_store_kwh - heat_to_store_desired)
+            )
+            for heat_to_store_desired in heat_to_store_options
+        ]
+        return list(set(actions))
 
     def get_model(self) -> HeatPumpWaterTankModel:
         from .model import HeatPumpWaterTankModel
@@ -132,10 +166,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         elec_usd_kwh = self.params.elec_usd_mwh[time_step]/1000
         rswt = self.params.rswt_f[time_step]
         load = self.params.load_kwh[time_step]
+        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy)
         cop = self.params.COP(self.params.oat_f[time_step])
 
         # Electricity cost
-        cost = elec_usd_kwh * action.heat_to_store_kwh/cop
+        heat_from_hp = max(0, load + losses + action.heat_to_store_kwh)
+        cost = elec_usd_kwh * (heat_from_hp)/cop
 
         # RSWT penalty
         if action.heat_to_store_kwh<0 and load>0 and (state.top_temp<rswt or next_state.top_temp<rswt):

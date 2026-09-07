@@ -20,6 +20,9 @@ class HeatPumpWaterTankParams(Params):
     max_hp_kwh_th: float = 25
     max_load_kwh_th: float = 20
 
+    hp_currently_off: bool = True
+    hp_constant_lift: float = 20
+
     # RSWT penalty
     rswt_penalty_enabled: bool = True
     rswt_penalty_weight: float = 0.3
@@ -40,8 +43,8 @@ class HeatPumpWaterTankParams(Params):
     load_kwh: list[float]
     oat_f: list[float]
 
-    def delta_T(self, swt: float) -> int:
-        return 20
+    def delta_T(self, swt: float) -> float:
+        return self.hp_constant_lift
 
     def COP(self, oat: float) -> float:
         if oat < self.cop_min_oat_f:
