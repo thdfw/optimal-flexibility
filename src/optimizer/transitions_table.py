@@ -6,6 +6,7 @@ closest available state using the distance metric.
 
 import json
 from pathlib import Path
+import time
 
 from assets.base import Action, Asset, Params, State
 
@@ -46,12 +47,13 @@ def _save_transitions_table[S: State, A: Action](transitions: dict[tuple[S, A], 
 def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
     transitions: dict[tuple[S, A], S] = {}
     for action in asset.action_space:
-        print(f"Computing transitions for action: {action}")
+        st = time.time()
+        print(f"Computing all transitions for action: {action}")
         for state in asset.state_space:
             next_state = asset.next_state(state, action)
             closest_state = asset.closest_state(next_state)
             transitions[(state, action)] = closest_state
-
+        print(f"Done in {round(time.time() - st)} seconds")
     path = _transitions_path(asset)
     _save_transitions_table(transitions, path)
     return transitions
