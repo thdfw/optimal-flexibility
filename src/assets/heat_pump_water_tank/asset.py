@@ -93,7 +93,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
         max_dt = max(self.params.timestep_duration_hours)
         max_load_kwh = self.params.max_load_kw_th * max_dt
-        max_hp_kwh = self.params.max_hp_kw_th * max_dt
+        max_hp_kwh = self.params.hp_max_kw_th * max_dt
         actions = []
         heat_to_store_kwh_range = [
             x/10 for x in range(
@@ -125,7 +125,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         heat_to_store_for_full = self.max_state_energy - state.energy
         hp_heat_out_for_full = heat_to_store_for_full + load + losses
 
-        min_charge_kwh = (self.params.hp_min_kw_first_step if time_step==0 else self.params.hp_min_kw_other_steps) * dt
+        min_charge_kwh = (self.params.hp_min_kw_th_first_step if time_step==0 else self.params.hp_min_kw_th_other_steps) * dt
 
         if hp_heat_out_for_full >= max_hp_heat_out:
             hp_heat_out_levels += [max_hp_heat_out]

@@ -3,25 +3,27 @@ from ..base import Params
 
 class HeatPumpWaterTankParams(Params):
     horizon: int = 48
+    
+    # Storage
     num_layers: int = 27
-
     storage_volume_gallons: float = 360
     storage_losses_percent: float = 0.5
 
+    # Heat pump
     hp_min_kw_elec: float = 0
     hp_max_kw_elec: float = 9.66
-    hp_min_kw_first_step: float = 5
-    hp_min_kw_other_steps: float = 10
+    hp_min_kw_th_first_step: float = 5
+    hp_min_kw_th_other_steps: float = 10
     hp_turn_on_minutes: int = 12
     hp_constant_lift_f: float = 20
-
     cop_intercept: float = 1.02
     cop_oat_coeff: float = 0.0257
     cop_lwt_coeff: float = 0
     cop_min: float = 1.4
     cop_min_oat_f: float = 15
 
-    max_hp_kw_th: float = 25
+    # Action range (storage change)
+    hp_max_kw_th: float = 25
     max_load_kw_th: float = 20
 
     # RSWT penalty
