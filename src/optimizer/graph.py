@@ -57,6 +57,7 @@ class Graph(Generic[S, A, P]):
         self.edges: dict[Node[S], list[Edge[S, A]]] = {}
 
         for time_step in range(self.N):
+            print(f"Building edges for time step {time_step}...")
             for node in self.nodes[time_step]:
                 self.edges[node] = []
 
