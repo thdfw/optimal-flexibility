@@ -32,7 +32,7 @@ class Graph(Generic[S, A, P]):
         self.asset = asset
         self.params = asset.params
         self.N = asset.params.horizon
-        self.transitions = get_transitions_table(asset)
+        self._time_and_log(self.load_transitions, "transitions")
         self._time_and_log(self.create_nodes, "nodes")
         self._time_and_log(self.create_edges, "edges")
         self._time_and_log(self.find_shortest_path, "shortest_path")
@@ -41,12 +41,17 @@ class Graph(Generic[S, A, P]):
         start = time.perf_counter()
         func()
         elapsed = round(time.perf_counter() - start, 1)
-        if step == "nodes":
+        if step == "transitions":
+            print(f"Loaded transitions table in {elapsed} seconds")
+        elif step == "nodes":
             print(f"Created nodes in {elapsed} seconds")
         elif step == "edges":
             print(f"Created edges in {elapsed} seconds")
         elif step == "shortest_path":
             print(f"Found shortest path in {elapsed} seconds")
+
+    def load_transitions(self) -> None:
+        self.transitions = get_transitions_table(self.asset)
 
     def create_nodes(self):
         """For every time step, create a layer of nodes corresponding to all available states."""
@@ -66,9 +71,8 @@ class Graph(Generic[S, A, P]):
     def create_edges(self):
         """Create edges for each available (node, action) pair with the corresponding cost."""
         self.edges: dict[Node[S], list[Edge[S, A]]] = {}
-
+        
         for time_step in range(self.N):
-            print(f"Building edges for time step {time_step}...")
             for node in self.nodes[time_step]:
                 self.edges[node] = []
 

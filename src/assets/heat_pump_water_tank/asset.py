@@ -58,14 +58,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 temperature_combinations.append(add_temp_combination)
             else:
                 print(f"Temperature combination {add_temp_combination} already exists")
-        print(f"=> {len(temperature_combinations)} temperature combinations")
 
         thermocline_combinations = []
         for t1 in range(1,self.params.num_layers+1):
             for t2 in range(1,self.params.num_layers+1):
                 if t2>=t1:
                     thermocline_combinations.append((t1,t2))
-        print(f"=> {len(thermocline_combinations)} thermocline combinations")
 
         states: list[HeatPumpWaterTankState] = []
 
@@ -85,7 +83,6 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 )
                 states.append(state)
 
-        print(f"=> Created a total of {len(states)} states")
         max_temp = self.params.max_tank_temp_f
         self.max_state_energy = HeatPumpWaterTankState.build(
             max_temp, max_temp, max_temp, self.params.num_layers, self.params.num_layers, self.params

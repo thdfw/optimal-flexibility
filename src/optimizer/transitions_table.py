@@ -40,7 +40,6 @@ def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P])
     if not path.exists():
         return _build_transitions_table(asset)
 
-    print(f"Loading transitions table from {path}")
     actions_by_key = {a.to_key(): a for a in asset.action_space}
     states_by_key = {s.to_key(): s for s in asset.state_space}
     with gzip.open(path, "rt", encoding="utf-8") as f:
