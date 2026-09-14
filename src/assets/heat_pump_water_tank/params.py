@@ -34,6 +34,15 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_exponent_rate: float = 0.15
     rswt_penalty_decay_max_hour: int = 12
 
+    # Plan stability penalty
+    stability_penalty_enabled: bool = True
+    stability_penalty_weight: float = 0.5
+    stability_penalty_decay: float = 0.75
+    stability_penalty_threshold_kwh: float = 10.0
+    stability_penalty_horizon_hours: int = 20
+    previous_plan_hp_kwh_el_list: list[float] | None = None
+    previous_estimate_storage_kwh_now: float | None = None
+
     # Initial state
     hp_currently_on: bool = True
     initial_top_temp: float = 120
