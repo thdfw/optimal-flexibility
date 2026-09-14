@@ -4,44 +4,12 @@ using the model of the system dynamics. Match it to the
 closest available state using the distance metric.
 '''
 
+import gzip
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
 from assets.base import Action, Asset, Params, State
-
-
-def _transitions_path(asset: Asset) -> Path:
-    return Path("transition_tables") / f"{asset.name}.json"
-
-
-def _load_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
-    path = _transitions_path(asset)
-    print(f"Loading transitions table from {path}")
-    state_type = type(asset.state_space[0])
-    action_type = type(asset.action_space[0])
-    data = json.loads(path.read_text())
-    transitions: dict[tuple[S, A], S] = {}
-    for entry in data:
-        state = state_type.model_validate(entry["state"])
-        action = action_type.model_validate(entry["action"])
-        next_state = state_type.model_validate(entry["next_state"])
-        transitions[(state, action)] = next_state
-    return transitions
-
-
-def _save_transitions_table[S: State, A: Action](transitions: dict[tuple[S, A], S], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = [
-        {
-            "state": state.model_dump(),
-            "action": action.model_dump(),
-            "next_state": next_state.model_dump(),
-        }
-        for (state, action), next_state in transitions.items()
-    ]
-    path.write_text(json.dumps(data, indent=2))
-    print(f"Saved transitions table to {path}")
 
 
 def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
@@ -54,13 +22,33 @@ def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, 
             closest_state = asset.closest_state(next_state)
             transitions[(state, action)] = closest_state
         print(f"Done in {round(time.time() - st)} seconds")
-    path = _transitions_path(asset)
-    _save_transitions_table(transitions, path)
+
+    path = Path("transition_tables") / f"{asset.name}.json.gz"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, dict[str, str]] = {}
+    for (state, action), next_state in transitions.items():
+        data.setdefault(action.to_key(), {})[state.to_key()] = next_state.to_key()
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(data, f, separators=(",", ":"))
+    print(f"Saved transitions table to {path} ({path.stat().st_size / 1e6:.1f} MB)")
+
     return transitions
 
 
 def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> dict[tuple[S, A], S]:
-    path = _transitions_path(asset)
-    if path.exists():
-        return _load_transitions_table(asset)
-    return _build_transitions_table(asset)
+    path = Path("transition_tables") / f"{asset.name}.json.gz"
+    if not path.exists():
+        return _build_transitions_table(asset)
+
+    print(f"Loading transitions table from {path}")
+    actions_by_key = {a.to_key(): a for a in asset.action_space}
+    states_by_key = {s.to_key(): s for s in asset.state_space}
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        data: dict[str, dict[str, str]] = json.load(f)
+
+    transitions: dict[tuple[S, A], S] = {}
+    for action_key, state_map in data.items():
+        action = actions_by_key[action_key]
+        for state_key, next_state_key in state_map.items():
+            transitions[(states_by_key[state_key], action)] = states_by_key[next_state_key]
+    return transitions

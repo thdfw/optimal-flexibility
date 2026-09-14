@@ -28,6 +28,15 @@ class HeatPumpWaterTankState(State):
     thermocline2: int
     energy: float
 
+    def to_key(self) -> str:
+        return (
+            f"{self.top_temp}"
+            f"({self.thermocline1})"
+            f"{self.middle_temp}"
+            f"({self.thermocline2})"
+            f"{self.bottom_temp}"
+        )
+
     @classmethod
     def build(
         cls,

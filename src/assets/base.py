@@ -7,9 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class State(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    def to_key(self) -> str:
+        raise NotImplementedError
+
 
 class Action(BaseModel):
     model_config = ConfigDict(frozen=True)
+
+    def to_key(self) -> str:
+        raise NotImplementedError
 
 
 class Params(BaseModel):
