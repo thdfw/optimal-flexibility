@@ -13,6 +13,7 @@ class HeatPumpWaterTankParams(Params):
     hp_min_kw_first_step: float = 5
     hp_min_kw_other_steps: float = 10
     hp_turn_on_minutes: int = 12
+    hp_constant_lift_f: float = 20
 
     cop_intercept: float = 1.02
     cop_oat_coeff: float = 0.0257
@@ -23,9 +24,6 @@ class HeatPumpWaterTankParams(Params):
     max_hp_kw_th: float = 25
     max_load_kw_th: float = 20
 
-    hp_currently_off: bool = True
-    hp_constant_lift: float = 20
-
     # RSWT penalty
     rswt_penalty_enabled: bool = True
     rswt_penalty_weight: float = 0.3
@@ -34,6 +32,7 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_decay_max_hour: int = 12
 
     # Initial state
+    hp_currently_on: bool = True
     initial_top_temp: float = 120
     initial_middle_temp: float = 110
     initial_bottom_temp: float = 100
@@ -47,7 +46,7 @@ class HeatPumpWaterTankParams(Params):
     oat_f: list[float]
 
     def delta_T(self, swt: float) -> float:
-        return self.hp_constant_lift
+        return self.hp_constant_lift_f
 
     def COP(self, oat: float) -> float:
         if oat < self.cop_min_oat_f:

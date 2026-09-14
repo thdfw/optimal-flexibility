@@ -112,7 +112,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         cop = self.params.COP(self.params.oat_f[time_step])
 
         if time_step==0:
-            turn_on_minutes = self.params.hp_turn_on_minutes if self.params.hp_currently_off else 0
+            turn_on_minutes = self.params.hp_turn_on_minutes if not self.params.hp_currently_on else 0
         else:
             turn_on_minutes = self.params.hp_turn_on_minutes/2
 
@@ -133,7 +133,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             hp_heat_out_levels += [hp_heat_out_for_full]
 
         # If the HP is already on, add the "meet the load" edge in the first step
-        if time_step==0 and load>0 and not self.params.hp_currently_off:
+        if time_step==0 and load>0 and self.params.hp_currently_on:
             hp_heat_out_levels += [load+losses]
 
         heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
