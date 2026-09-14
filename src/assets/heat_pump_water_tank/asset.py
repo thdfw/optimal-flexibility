@@ -153,20 +153,45 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction) -> HeatPumpWaterTankState:
         return self.model.next_state(state, action)
 
-    def _temp_at_layer(self, state: HeatPumpWaterTankState, layer: int) -> float:
-        if layer < state.thermocline1:
-            return state.top_temp
-        if layer < state.thermocline2:
-            return state.middle_temp
-        return state.bottom_temp
+    def _temps_by_layer(self, state: HeatPumpWaterTankState) -> list[float]:
+        n = self.params.num_layers
+        th1, th2 = state.thermocline1, state.thermocline2
+        return (
+            [state.top_temp] * th1
+            + [state.middle_temp] * (th2 - th1)
+            + [state.bottom_temp] * (n - th2)
+        )
 
     def state_distance(self, state1: HeatPumpWaterTankState, state2: HeatPumpWaterTankState) -> float:
-        distance = 0
-        for layer in range(self.params.num_layers):
-            t_1 = self._temp_at_layer(state1, layer)
-            t_2 = self._temp_at_layer(state2, layer)
-            distance += abs(t_1 - t_2)
-        return distance
+        temps_1 = self._temps_by_layer(state1)
+        temps_2 = self._temps_by_layer(state2)
+        return sum(abs(a-b) for a, b in zip(temps_1, temps_2))
+
+    def closest_state(self, state: HeatPumpWaterTankState) -> HeatPumpWaterTankState:
+        energy_window_kwh = 0.5
+        shortlist = [
+            candidate
+            for candidate in self.state_space
+            if abs(candidate.energy - state.energy) <= energy_window_kwh
+        ]
+        while not shortlist:
+            if energy_window_kwh > 1 and 80 < state.top_temp < 170:
+                print(f"No state within ±{energy_window_kwh} kWh of predicted state {state}")
+            shortlist = [
+                candidate
+                for candidate in self.state_space
+                if abs(candidate.energy - state.energy) <= energy_window_kwh
+            ]
+            energy_window_kwh += 0.5
+
+        return min(
+            shortlist,
+            key=lambda candidate: (
+                self.state_distance(state, candidate),
+                abs(candidate.energy - state.energy),
+                -candidate.top_temp,
+            ),
+        )
 
     def cost(
         self,
