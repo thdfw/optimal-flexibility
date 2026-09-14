@@ -637,31 +637,3 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
             return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
-
-# if __name__ == "__main__":
-#     import logging
-#     from logging import Logger
-#     import matplotlib.pyplot as plt
-    
-#     params = WinterOakSupergraphParams(
-#         num_layers=27,
-#         storage_volume_gallons=360,
-#         constant_delta_t=20,
-#         max_hp_kwh_th=25,
-#         max_load_kwh_th=20
-#     )
-#     model = RuleBasedStorageModel(params, [], {}, logging.getLogger())
-#     temps = [t for t in range(90, 181)]
-#     return_temps = [model.get_discharge_return_temp(t) for t in temps]
-#     plt.figure()
-#     plt.plot(temps, return_temps)
-#     pts_x = list(model.discharge_return_temp.keys())
-#     pts_y = list(model.discharge_return_temp.values())
-#     plt.scatter(pts_x, pts_y, color="C1", zorder=5)
-#     for x, y in model.discharge_return_temp.items():
-#         plt.annotate(f"({x}, {y})", (x, y), xytext=(5, 5), textcoords="offset points", fontsize=8)
-#     plt.xlabel("Discharge supply temp (°F)")
-#     plt.ylabel("Return temp (°F)")
-#     plt.title("get_discharge_return_temp")
-#     plt.grid(True)
-#     plt.show()

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic, Self, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class State(BaseModel):
@@ -13,8 +13,26 @@ class Action(BaseModel):
 
 
 class Params(BaseModel):
+    """horizon: number of optimization steps.
+
+    timestep_duration_hours: duration of each step in hours (one entry per step).
+    Forecast arrays must align with horizon (energies/rates for that step's interval).
+    """
     horizon: int
-    timestep_hours: float = 1.0
+    timestep_duration_hours: list[float] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _normalize_timestep_duration_hours(self) -> Self:
+        if not self.timestep_duration_hours:
+            self.timestep_duration_hours = [1.0] * self.horizon
+        elif len(self.timestep_duration_hours) != self.horizon:
+            raise ValueError(
+                f"timestep_duration_hours length ({len(self.timestep_duration_hours)}) "
+                f"must equal horizon ({self.horizon})"
+            )
+        if any(dt <= 0 for dt in self.timestep_duration_hours):
+            raise ValueError("each timestep_duration_hours entry must be positive")
+        return self
 
 
 S = TypeVar("S", bound=State)

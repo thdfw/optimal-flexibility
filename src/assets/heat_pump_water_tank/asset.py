@@ -91,9 +91,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return states
 
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
-        dt = self.params.timestep_hours
-        max_load_kwh = self.params.max_load_kwh_th * dt
-        max_hp_kwh = self.params.max_hp_kwh_th * dt
+        max_dt = max(self.params.timestep_duration_hours)
+        max_load_kwh = self.params.max_load_kw_th * max_dt
+        max_hp_kwh = self.params.max_hp_kw_th * max_dt
         actions = []
         heat_to_store_kwh_range = [
             x/10 for x in range(
@@ -106,9 +106,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return actions
 
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
-        dt = self.params.timestep_hours
+        dt = self.params.timestep_duration_hours[time_step]
         load = self.params.load_kwh[time_step]
-        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy)
+        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy) * dt
         cop = self.params.COP(self.params.oat_f[time_step])
 
         if time_step==0:
@@ -179,7 +179,8 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         elec_usd_kwh = self.params.elec_usd_mwh[time_step]/1000
         rswt = self.params.rswt_f[time_step]
         load = self.params.load_kwh[time_step]
-        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy)
+        dt = self.params.timestep_duration_hours[time_step]
+        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy) * dt
         cop = self.params.COP(self.params.oat_f[time_step])
 
         # Electricity cost
@@ -219,6 +220,6 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         weight = self.params.rswt_penalty_weight
         decay = self.params.rswt_penalty_decay
         max_hour = self.params.rswt_penalty_decay_max_hour
-        elapsed_hours = time_step * self.params.timestep_hours
+        elapsed_hours = sum(self.params.timestep_duration_hours[:time_step])
         penalty = decay**(max_hour - min(elapsed_hours, max_hour)) * weight * np.exp(exponent_rate*(rswt-swt))
         return penalty

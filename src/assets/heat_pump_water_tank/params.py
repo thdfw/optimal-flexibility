@@ -20,8 +20,8 @@ class HeatPumpWaterTankParams(Params):
     cop_min: float = 1.4
     cop_min_oat_f: float = 15
 
-    max_hp_kwh_th: float = 25
-    max_load_kwh_th: float = 20
+    max_hp_kw_th: float = 25
+    max_load_kw_th: float = 20
 
     hp_currently_off: bool = True
     hp_constant_lift: float = 20
