@@ -99,16 +99,19 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         max_dt = max(self.params.timestep_duration_hours)
         max_load_kwh = self.params.max_load_kw_th * max_dt
         max_hp_kwh = self.params.hp_max_kw_th * max_dt
-        actions = []
-        heat_to_store_kwh_range = [
-            x/10 for x in range(
-                -int(max_load_kwh*10),
-                int((max_hp_kwh+1)*10) + 1
+        self._heat_to_store_discretized = [
+            x / 10
+            for x in range(
+                -int(max_load_kwh * 10),
+                int((max_hp_kwh + 1) * 10) + 1,
             )
         ]
-        for heat_to_store_kwh in heat_to_store_kwh_range:
-            actions.append(HeatPumpWaterTankAction(heat_to_store_kwh=heat_to_store_kwh))
-        return actions
+        self._heat_to_store_discretized_array = np.array(self._heat_to_store_discretized)
+        self._action_by_heat_to_store_kwh = {
+            heat: HeatPumpWaterTankAction(heat_to_store_kwh=heat)
+            for heat in self._heat_to_store_discretized
+        }
+        return list(self._action_by_heat_to_store_kwh.values())
 
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
         dt = self.params.timestep_duration_hours[time_step]
@@ -142,14 +145,17 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             hp_heat_out_levels += [load+losses]
 
         heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
-        actions = [
-            min(
-                self.action_space, 
-                key = lambda x: abs(x.heat_to_store_kwh - heat_to_store_desired)
-            )
-            for heat_to_store_desired in heat_to_store_options
-        ]
-        return list(set(actions))
+        actions: list[HeatPumpWaterTankAction] = []
+        seen: set[HeatPumpWaterTankAction] = set()
+        for heat_to_store_desired in heat_to_store_options:
+            idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
+            heat = float(self._heat_to_store_discretized_array[idx])
+            action = self._action_by_heat_to_store_kwh[heat]
+            if action not in seen:
+                seen.add(action)
+                actions.append(action)
+        
+        return actions
 
     def allow_transition(
         self,

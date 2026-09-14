@@ -1,3 +1,4 @@
+import time
 from typing import Generic
 
 from assets.base import A, Asset, P, S
@@ -32,9 +33,20 @@ class Graph(Generic[S, A, P]):
         self.params = asset.params
         self.N = asset.params.horizon
         self.transitions = get_transitions_table(asset)
-        self.create_nodes()
-        self.create_edges()
-        self.find_shortest_path()
+        self._time_and_log(self.create_nodes, "nodes")
+        self._time_and_log(self.create_edges, "edges")
+        self._time_and_log(self.find_shortest_path, "shortest_path")
+
+    def _time_and_log(self, func, step: str) -> None:
+        start = time.perf_counter()
+        func()
+        elapsed = round(time.perf_counter() - start, 1)
+        if step == "nodes":
+            print(f"Created nodes in {elapsed} seconds")
+        elif step == "edges":
+            print(f"Created edges in {elapsed} seconds")
+        elif step == "shortest_path":
+            print(f"Found shortest path in {elapsed} seconds")
 
     def create_nodes(self):
         """For every time step, create a layer of nodes corresponding to all available states."""
@@ -50,7 +62,6 @@ class Graph(Generic[S, A, P]):
             time_step: {node.state: node for node in self.nodes[time_step]}
             for time_step in range(self.N + 1)
         }
-        print("Created all nodes.")
 
     def create_edges(self):
         """Create edges for each available (node, action) pair with the corresponding cost."""
@@ -71,8 +82,6 @@ class Graph(Generic[S, A, P]):
                     cost = self.asset.cost(node.state, next_state, action, time_step)
                     self.edges[node].append(Edge(node, next_node, cost, action))
 
-        print("Created all edges.")
-
     def find_shortest_path(self):
         """Find the shortest path using backward induction."""
         for time_step in range(self.N - 1, -1, -1):
@@ -83,5 +92,3 @@ class Graph(Generic[S, A, P]):
                 best_edge = min(self.edges[node], key=lambda e: e.head.pathcost + e.cost)
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
-
-        print("Found shortest path.")
