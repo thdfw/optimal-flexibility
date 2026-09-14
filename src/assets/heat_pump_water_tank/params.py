@@ -45,11 +45,11 @@ class HeatPumpWaterTankParams(Params):
 
     # Initial state
     hp_currently_on: bool = True
-    initial_top_temp: float = 120
-    initial_middle_temp: float = 110
+    initial_top_temp: float = 160
+    initial_middle_temp: float = 160
     initial_bottom_temp: float = 100
-    initial_thermocline1: int = 1
-    initial_thermocline2: int = 2
+    initial_thermocline1: int = 27
+    initial_thermocline2: int = 27
 
     # Forecasts
     elec_usd_mwh: list[float]
