@@ -52,6 +52,7 @@ class Graph(Generic[S, A, P]):
 
     def load_transitions(self) -> None:
         self.transitions = get_transitions_table(self.asset)
+        self.states_by_key = {state.to_key(): state for state in self.asset.state_space}
 
     def create_nodes(self):
         """For every time step, create a layer of nodes corresponding to all available states."""
@@ -79,12 +80,16 @@ class Graph(Generic[S, A, P]):
                 available_actions = self.asset.get_available_actions(node.state, time_step)
 
                 for action in available_actions:
-                    next_state = self.transitions[(node.state, action)]
+                    next_state_key = self.transitions[action.to_key()][node.state.to_key()]
+                    next_state = self.states_by_key[next_state_key]
                     if not self.asset.allow_transition(node.state, next_state, action, time_step):
                         continue
                     next_node = self.nodes_by[time_step + 1][next_state]
                     cost = self.asset.cost(node.state, next_state, action, time_step)
                     self.edges[node].append(Edge(node, next_node, cost, action))
+
+        del self.transitions
+        del self.states_by_key
 
     def find_shortest_path(self):
         """Find the shortest path using backward induction."""
