@@ -82,8 +82,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 states.append(state)
 
         print(f"=> Created a total of {len(states)} states")
+        max_temp = self.params.max_tank_temp_f
         self.max_state_energy = HeatPumpWaterTankState.build(
-            180, 180, 180, self.params.num_layers, self.params.num_layers, self.params
+            max_temp, max_temp, max_temp, self.params.num_layers, self.params.num_layers, self.params
         ).energy
         self.min_state_energy = HeatPumpWaterTankState.build(
             70, 70, 70, self.params.num_layers, self.params.num_layers, self.params
@@ -145,6 +146,17 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             for heat_to_store_desired in heat_to_store_options
         ]
         return list(set(actions))
+
+    def allow_transition(
+        self,
+        state: HeatPumpWaterTankState,
+        next_state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> bool:
+        if action.heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
+            return False
+        return True
 
     def get_model(self) -> HeatPumpWaterTankModel:
         from .model import HeatPumpWaterTankModel

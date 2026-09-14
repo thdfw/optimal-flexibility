@@ -8,6 +8,7 @@ class HeatPumpWaterTankParams(Params):
     num_layers: int = 27
     storage_volume_gallons: float = 360
     storage_losses_percent: float = 0.5
+    max_tank_temp_f: float = 160
 
     # Heat pump
     hp_min_kw_elec: float = 0

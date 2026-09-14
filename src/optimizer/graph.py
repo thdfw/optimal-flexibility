@@ -64,9 +64,10 @@ class Graph(Generic[S, A, P]):
 
                 for action in available_actions:
                     next_state = self.transitions[(node.state, action)]
+                    if not self.asset.allow_transition(node.state, next_state, action, time_step):
+                        continue
                     next_node = self.nodes_by[time_step + 1][next_state]
                     cost = self.asset.cost(node.state, next_state, action, time_step)
-
                     self.edges[node].append(Edge(node, next_node, cost, action))
 
         print("Created all edges.")
