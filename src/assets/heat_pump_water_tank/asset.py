@@ -19,6 +19,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         super().__init__(params)
         self._compute_storage_difference_with_plan_kwh()
 
+    def on_params_updated(self) -> None:
+        self._compute_storage_difference_with_plan_kwh()
+
     @property
     def name(self) -> str:
         return "heat_pump_water_tank"

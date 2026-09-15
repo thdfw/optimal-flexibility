@@ -1,3 +1,5 @@
+import contextlib
+import gc
 import time
 from dataclasses import dataclass
 from typing import Generic
@@ -83,6 +85,7 @@ class Graph(Generic[S, A, P]):
             time_step: {node.state: node for node in self.nodes[time_step]}
             for time_step in range(self.N + 1)
         }
+        self.bid_nodes: list[Node[S]] = list(self.nodes[0])
 
     def create_edges(self):
         """Create edges for each available (node, action) pair with the corresponding cost."""
@@ -126,11 +129,80 @@ class Graph(Generic[S, A, P]):
 
     def find_initial_node(self) -> Node[S]:
         closest = self.asset.closest_state(self.asset.initial_state())
-        return self.nodes_by[0][closest]
+        nodes_by_0 = getattr(self, "nodes_by", None)
+        if nodes_by_0 is not None:
+            return nodes_by_0[0][closest]
+        for node in self.bid_nodes:
+            if node.state == closest:
+                return node
+        raise RuntimeError(f"No step-0 node for initial state {closest}")
 
-    def generate_bid(self, forecast_price_usd_mwh: float, initial_node: Node[S] | None = None) -> list[PriceQuantityPair]:
-        if initial_node is None:
-            initial_node = self.find_initial_node()
+    def trim_graph_for_waiting(self) -> None:
+        """Keep only nodes and edges for the first time step to generate a bid later."""
+        start = time.perf_counter()
+        if self.N >= 2:
+            for node in self.nodes[2]:
+                node.next_node = None
+        with contextlib.suppress(AttributeError):
+            del self.nodes_by
+        with contextlib.suppress(AttributeError):
+            del self.nodes
+        with contextlib.suppress(AttributeError):
+            del self.edges
+        gc.collect()
+        elapsed = round(time.perf_counter() - start, 1)
+        print(f"Trimmed graph in {elapsed} seconds")
+
+    def cleanup(self) -> None:
+        """Break circular references so the graph can be garbage-collected."""
+        all_node_ids: set[int] = set()
+        nodes_to_clear: list[Node[S]] = []
+        edges_to_clear: list[Edge[S, A]] = []
+
+        bid_edges: dict[Node[S], list[Edge[S, A]]] = getattr(self, "bid_edges", None) or {}
+        for node, edge_list in bid_edges.items():
+            if id(node) not in all_node_ids:
+                all_node_ids.add(id(node))
+                nodes_to_clear.append(node)
+            for edge in edge_list:
+                edges_to_clear.append(edge)
+                for n in (edge.tail, edge.head):
+                    if n is not None and id(n) not in all_node_ids:
+                        all_node_ids.add(id(n))
+                        nodes_to_clear.append(n)
+
+        for node in getattr(self, "bid_nodes", None) or []:
+            if id(node) not in all_node_ids:
+                all_node_ids.add(id(node))
+                nodes_to_clear.append(node)
+
+        i = 0
+        while i < len(nodes_to_clear):
+            nxt = nodes_to_clear[i].next_node
+            if nxt is not None and id(nxt) not in all_node_ids:
+                all_node_ids.add(id(nxt))
+                nodes_to_clear.append(nxt)
+            i += 1
+
+        for node in nodes_to_clear:
+            node.next_node = None
+        for edge in edges_to_clear:
+            edge.tail = None  # type: ignore[assignment]
+            edge.head = None  # type: ignore[assignment]
+
+        for edge_list in bid_edges.values():
+            edge_list.clear()
+
+        for attr in ("bid_edges", "bid_nodes", "nodes", "nodes_by", "edges"):
+            with contextlib.suppress(AttributeError):
+                delattr(self, attr)
+
+    def generate_bid(self, forecast_price_usd_mwh: float, updated_params: P | None = None) -> list[PriceQuantityPair]:
+        if updated_params is not None:
+            self.asset.update_params(updated_params)
+            self.params = self.asset.params
+
+        initial_node = self.find_initial_node()
 
         bid_edges = self.bid_edges.get(initial_node, [])
         if not bid_edges:

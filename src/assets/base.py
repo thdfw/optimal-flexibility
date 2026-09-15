@@ -106,5 +106,13 @@ class Asset(ABC, Generic[S, A, P]):
     def initial_state(self) -> S:
         raise NotImplementedError
 
+    def update_params(self, params: P) -> None:
+        self.params = params
+        self.model.params = params
+        self.on_params_updated()
+
+    def on_params_updated(self) -> None:
+        pass
+
     def allow_transition(self, state: S, next_state: S, action: A, time_step: int) -> bool:
         return True
