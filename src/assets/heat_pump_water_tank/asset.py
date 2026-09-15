@@ -173,6 +173,16 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         heat_from_hp = max(0.0, load + losses + action.heat_to_store_kwh)
         return heat_from_hp / cop
 
+    def initial_state(self) -> HeatPumpWaterTankState:
+        return HeatPumpWaterTankState.build(
+            top_temp=self.params.initial_top_temp,
+            middle_temp=self.params.initial_middle_temp,
+            bottom_temp=self.params.initial_bottom_temp,
+            thermocline1=self.params.initial_thermocline1,
+            thermocline2=self.params.initial_thermocline2,
+            params=self.params,
+        )
+
     def get_model(self) -> HeatPumpWaterTankModel:
         from .model import HeatPumpWaterTankModel
         return HeatPumpWaterTankModel(self.params, self.state_space)

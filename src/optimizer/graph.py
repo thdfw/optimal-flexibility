@@ -1,8 +1,15 @@
 import time
+from dataclasses import dataclass
 from typing import Generic
 
 from assets.base import A, Asset, P, S
 from optimizer.transitions_table import get_transitions_table
+
+
+@dataclass(frozen=True)
+class PriceQuantityPair:
+    price_usd_mwh: float
+    quantity_kwh: float
 
 
 class Node(Generic[S]):
@@ -116,3 +123,46 @@ class Graph(Generic[S, A, P]):
                 best_edge = min(self.edges[node], key=lambda e: e.head.pathcost + e.cost)
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
+
+    def find_initial_node(self) -> Node[S]:
+        closest = self.asset.closest_state(self.asset.initial_state())
+        return self.nodes_by[0][closest]
+
+    def generate_bid(self, forecast_price_usd_mwh: float, initial_node: Node[S] | None = None) -> list[PriceQuantityPair]:
+        if initial_node is None:
+            initial_node = self.find_initial_node()
+
+        bid_edges = self.bid_edges.get(initial_node, [])
+        if not bid_edges:
+            raise ValueError(f"No bid edges from initial node {initial_node}")
+
+        price_range_usd_mwh = sorted(set(range(-100, 2000)) | {forecast_price_usd_mwh})
+        forecast_usd_kwh = forecast_price_usd_mwh / 1000
+        
+        pq_pairs: list[PriceQuantityPair] = []
+
+        for trial_price in price_range_usd_mwh:
+            trial_usd_kwh = float(trial_price) / 1000
+
+            best_edge = min(
+                bid_edges, 
+                key=lambda e: 
+                e.head.pathcost 
+                + e.elec_used_kwh * trial_usd_kwh # Cost of elec used at trial price
+                + (e.cost - e.elec_used_kwh * forecast_usd_kwh), # Cost of penalties
+            )
+            best_quantity = max(0, best_edge.elec_used_kwh)
+
+            if not pq_pairs or best_quantity - pq_pairs[-1].quantity_kwh > 0.01:
+                pq_pairs.append(
+                    PriceQuantityPair(
+                        price_usd_mwh=float(trial_price),
+                        quantity_kwh=best_quantity,
+                    )
+                )
+
+        best_at_forecast = min(bid_edges, key=lambda e: e.head.pathcost + e.cost)
+        initial_node.pathcost = best_at_forecast.head.pathcost + best_at_forecast.cost
+        initial_node.next_node = best_at_forecast.head
+
+        return pq_pairs

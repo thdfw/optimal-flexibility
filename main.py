@@ -1,6 +1,7 @@
 import pandas as pd
 
 from assets.heat_pump_water_tank import HeatPumpWaterTankAsset, HeatPumpWaterTankParams, plot_graph_results
+from optimizer.bid_visualizer import plot_bid
 from optimizer.graph import Graph
 
 # Temporary: example input data
@@ -29,4 +30,7 @@ params = HeatPumpWaterTankParams(
 )
 asset = HeatPumpWaterTankAsset(params)
 graph = Graph(asset)
+forecast_price = params.elec_usd_mwh[0]
+pq_pairs = graph.generate_bid(forecast_price_usd_mwh=forecast_price)
 plot_graph_results(graph)
+plot_bid(pq_pairs, forecast_price)

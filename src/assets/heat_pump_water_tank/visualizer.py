@@ -18,17 +18,7 @@ def _graph_asset(graph: HpGraph) -> HeatPumpWaterTankAsset:
 
 
 def _initial_node(graph: HpGraph) -> Node[HeatPumpWaterTankState]:
-    asset = _graph_asset(graph)
-    initial = HeatPumpWaterTankState.build(
-        top_temp=asset.params.initial_top_temp,
-        middle_temp=asset.params.initial_middle_temp,
-        bottom_temp=asset.params.initial_bottom_temp,
-        thermocline1=asset.params.initial_thermocline1,
-        thermocline2=asset.params.initial_thermocline2,
-        params=asset.params,
-    )
-    closest = asset.closest_state(initial)
-    return graph.nodes_by[0][closest]
+    return graph.find_initial_node()
 
 
 def _edge_for_transition(

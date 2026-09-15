@@ -102,5 +102,9 @@ class Asset(ABC, Generic[S, A, P]):
     def elec_used_kwh(self, state: S, action: A, time_step: int) -> float:
         raise NotImplementedError
 
+    @abstractmethod
+    def initial_state(self) -> S:
+        raise NotImplementedError
+
     def allow_transition(self, state: S, next_state: S, action: A, time_step: int) -> bool:
         return True
