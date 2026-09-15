@@ -13,10 +13,7 @@ def plot_bid(
     show: bool = True,
     save_as: str | None = None,
 ) -> pd.DataFrame:
-    """
-    Plot step-0 bid curve (quantity vs price) and expected market price, matching
-    gridworks-flo DGraphVisualizer.plot_pq_pairs.
-    """
+
     if not pq_pairs:
         raise ValueError("pq_pairs is empty")
 
