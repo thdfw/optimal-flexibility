@@ -165,6 +165,14 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             return False
         return True
 
+    def elec_used_kwh(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> float:
+        dt = self.params.timestep_duration_hours[time_step]
+        load = self.params.load_kwh[time_step]
+        losses = self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
+        cop = self.params.COP(self.params.oat_f[time_step])
+        heat_from_hp = max(0.0, load + losses + action.heat_to_store_kwh)
+        return heat_from_hp / cop
+
     def get_model(self) -> HeatPumpWaterTankModel:
         from .model import HeatPumpWaterTankModel
         return HeatPumpWaterTankModel(self.params, self.state_space)
@@ -223,13 +231,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         elec_usd_kwh = self.params.elec_usd_mwh[time_step]/1000
         rswt = self.params.rswt_f[time_step]
         load = self.params.load_kwh[time_step]
-        dt = self.params.timestep_duration_hours[time_step]
-        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy) * dt
-        cop = self.params.COP(self.params.oat_f[time_step])
 
-        # Electricity cost
-        heat_from_hp = max(0, load + losses + action.heat_to_store_kwh)
-        cost = elec_usd_kwh * (heat_from_hp)/cop
+        hp_kwh_el = self.elec_used_kwh(state, action, time_step)
+        cost = elec_usd_kwh * hp_kwh_el
 
         # RSWT penalty
         if action.heat_to_store_kwh<0 and load>0 and (state.top_temp<rswt or next_state.top_temp<rswt):
@@ -254,7 +258,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             cost += self.rswt_penalty(time_step, swt, rswt)
 
         # Plan stability penalty
-        cost += self.stability_penalty(time_step, heat_from_hp/cop)
+        cost += self.stability_penalty(time_step, hp_kwh_el)
 
         return cost
 

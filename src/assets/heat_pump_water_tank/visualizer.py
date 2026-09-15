@@ -49,10 +49,8 @@ def _hp_heat_out_kwh(
     action: HeatPumpWaterTankAction,
     time_step: int,
 ) -> float:
-    dt = asset.params.timestep_duration_hours[time_step]
-    load = asset.params.load_kwh[time_step]
-    losses = asset.params.storage_losses_percent / 100 * (state.energy - asset.min_state_energy) * dt
-    return max(0.0, load + losses + action.heat_to_store_kwh)
+    cop = asset.params.COP(asset.params.oat_f[time_step])
+    return asset.elec_used_kwh(state, action, time_step) * cop
 
 
 def _rswt_penalty_for_edge(

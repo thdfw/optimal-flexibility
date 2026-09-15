@@ -17,11 +17,19 @@ class Node(Generic[S]):
 
 
 class Edge(Generic[S, A]):
-    def __init__(self, tail: Node[S], head: Node[S], cost: float, action: A):
+    def __init__(
+        self,
+        tail: Node[S],
+        head: Node[S],
+        cost: float,
+        action: A,
+        elec_used_kwh: float,
+    ):
         self.tail: Node[S] = tail
         self.head: Node[S] = head
         self.cost = cost
         self.action = action
+        self.elec_used_kwh = elec_used_kwh
 
     def __repr__(self):
         return f"Edge[{self.tail} --{round(self.cost, 3)}--> {self.head}]"
@@ -72,10 +80,13 @@ class Graph(Generic[S, A, P]):
     def create_edges(self):
         """Create edges for each available (node, action) pair with the corresponding cost."""
         self.edges: dict[Node[S], list[Edge[S, A]]] = {}
-        
+        self.bid_edges: dict[Node[S], list[Edge[S, A]]] = {}
+
         for time_step in range(self.N):
             for node in self.nodes[time_step]:
                 self.edges[node] = []
+                if time_step <= 1:
+                    self.bid_edges[node] = []
 
                 available_actions = self.asset.get_available_actions(node.state, time_step)
 
@@ -86,7 +97,11 @@ class Graph(Generic[S, A, P]):
                         continue
                     next_node = self.nodes_by[time_step + 1][next_state]
                     cost = self.asset.cost(node.state, next_state, action, time_step)
-                    self.edges[node].append(Edge(node, next_node, cost, action))
+                    elec_used_kwh = self.asset.elec_used_kwh(node.state, action, time_step)
+                    edge = Edge(node, next_node, cost, action, elec_used_kwh)
+                    self.edges[node].append(edge)
+                    if time_step <= 1:
+                        self.bid_edges[node].append(edge)
 
         del self.transitions
         del self.states_by_key
