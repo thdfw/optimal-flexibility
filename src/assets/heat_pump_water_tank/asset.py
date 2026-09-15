@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from optimizer.settings import get_logger
+
 from ..base import Asset
+
+logger = get_logger("assets.heat_pump_water_tank")
 from .action import HeatPumpWaterTankAction
 from .params import HeatPumpWaterTankParams
 from .state import HeatPumpWaterTankState
@@ -60,7 +64,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             if add_temp_combination not in temperature_combinations:
                 temperature_combinations.append(add_temp_combination)
             else:
-                print(f"Temperature combination {add_temp_combination} already exists")
+                logger.debug(f"Temperature combination {add_temp_combination} already exists")
 
         thermocline_combinations = []
         for t1 in range(1,self.params.num_layers+1):
@@ -216,7 +220,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         ]
         while not shortlist:
             if energy_window_kwh > 1 and 80 < state.top_temp < 170:
-                print(f"No state within ±{energy_window_kwh} kWh of predicted state {state}")
+                logger.warning(f"No state within ±{energy_window_kwh} kWh of predicted state {state}")
             shortlist = [
                 candidate
                 for candidate in self.state_space

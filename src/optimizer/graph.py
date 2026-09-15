@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Generic
 
 from assets.base import A, Asset, P, S
+from optimizer.settings import get_logger
 from optimizer.transitions_table import get_transitions_table
 
 
@@ -46,26 +47,20 @@ class Edge(Generic[S, A]):
 
 class Graph(Generic[S, A, P]):
     def __init__(self, asset: Asset[S, A, P]):
+        self.logger = get_logger("graph")
         self.asset = asset
         self.params = asset.params
         self.N = asset.params.horizon
-        self._time_and_log(self.load_transitions, "transitions")
-        self._time_and_log(self.create_nodes, "nodes")
-        self._time_and_log(self.create_edges, "edges")
-        self._time_and_log(self.find_shortest_path, "shortest_path")
+        self._time_and_log(self.load_transitions, "Loaded transitions table")
+        self._time_and_log(self.create_nodes, "Created nodes")
+        self._time_and_log(self.create_edges, "Created edges")
+        self._time_and_log(self.find_shortest_path, "Found shortest path")
 
-    def _time_and_log(self, func, step: str) -> None:
+    def _time_and_log(self, func, label: str) -> None:
         start = time.perf_counter()
         func()
         elapsed = round(time.perf_counter() - start, 1)
-        if step == "transitions":
-            print(f"Loaded transitions table in {elapsed} seconds")
-        elif step == "nodes":
-            print(f"Created nodes in {elapsed} seconds")
-        elif step == "edges":
-            print(f"Created edges in {elapsed} seconds")
-        elif step == "shortest_path":
-            print(f"Found shortest path in {elapsed} seconds")
+        self.logger.info(f"{label} in {elapsed} seconds")
 
     def load_transitions(self) -> None:
         self.transitions = get_transitions_table(self.asset)
@@ -121,7 +116,7 @@ class Graph(Generic[S, A, P]):
         for time_step in range(self.N - 1, -1, -1):
             for node in self.nodes[time_step]:
                 if not self.edges[node]:
-                    print(f"No edges found for node {node}")
+                    self.logger.warning(f"No edges found for node {node}")
                     continue
                 best_edge = min(self.edges[node], key=lambda e: e.head.pathcost + e.cost)
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
@@ -151,7 +146,7 @@ class Graph(Generic[S, A, P]):
             del self.edges
         gc.collect()
         elapsed = round(time.perf_counter() - start, 1)
-        print(f"Trimmed graph in {elapsed} seconds")
+        self.logger.info(f"Trimmed graph in {elapsed} seconds")
 
     def cleanup(self) -> None:
         """Break circular references so the graph can be garbage-collected."""
@@ -237,4 +232,5 @@ class Graph(Generic[S, A, P]):
         initial_node.pathcost = best_at_forecast.head.pathcost + best_at_forecast.cost
         initial_node.next_node = best_at_forecast.head
 
+        self.logger.info(f"Done ({len(pq_pairs)} PQ pairs found).")
         return pq_pairs

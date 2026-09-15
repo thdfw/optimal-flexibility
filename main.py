@@ -3,6 +3,10 @@ import pandas as pd
 from assets.heat_pump_water_tank import HeatPumpWaterTankAsset, HeatPumpWaterTankParams, plot_graph_results
 from optimizer.bid_visualizer import plot_bid
 from optimizer.graph import Graph
+from optimizer.settings import get_logger, setup_logging
+
+setup_logging()
+logger = get_logger("main")
 
 # Temporary: example input data
 LMP = [28.14, 28.53, 46.38, 44.84, 44.8, 32.94, 39.68, 32.07, 30.07, 27.95, 29.87, 35.63, 45.63, 50.21, 54.74, 55.89, 46.9, 40.9, 33.31, 25.57, 27.12, 26.18, 24.94, 24.54, 28.14, 28.53, 46.38, 44.84, 44.8, 32.94, 39.68, 32.07, 30.07, 27.95, 29.87, 35.63, 45.63, 50.21, 54.74, 55.89, 46.9, 40.9, 33.31, 25.57, 27.12, 26.18, 24.94, 24.54]
