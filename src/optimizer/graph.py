@@ -56,7 +56,6 @@ class Graph(Generic[S, A, P]):
         self._time_and_log(self.load_transitions, "Loaded transitions table")
         self._time_and_log(self.create_nodes, "Created nodes")
         self._time_and_log(self.create_edges, "Created edges")
-        self._time_and_log(self.find_shortest_path, "Found shortest path")
 
     def _time_and_log(self, func, label: str) -> None:
         start = time.perf_counter()
@@ -116,8 +115,10 @@ class Graph(Generic[S, A, P]):
         del self.transitions
         del self.states_by_key
 
-    def find_shortest_path(self):
-        """Find the shortest path using backward induction."""
+    def find_shortest_path(self) -> None:
+        self._time_and_log(self._find_shortest_path, "Found shortest path")
+
+    def _find_shortest_path(self) -> None:
         for time_step in range(self.N - 1, -1, -1):
             for node in self.nodes[time_step]:
                 if not self.edges[node]:
@@ -199,6 +200,7 @@ class Graph(Generic[S, A, P]):
 
     def generate_bid(self, forecast_price_usd_mwh: float, updated_params: P | None = None) -> list[PriceQuantityPair]:
         if updated_params is not None:
+            self.params.validate_bid_params_update(updated_params)
             self.asset.update_params(updated_params)
             self.params = self.asset.params
 

@@ -34,6 +34,7 @@ params = HeatPumpWaterTankParams(
 )
 asset = HeatPumpWaterTankAsset(params)
 graph = Graph(asset)
+graph.find_shortest_path()
 plot_graph_results(graph)
 
 forecast_price = params.elec_usd_mwh[0]

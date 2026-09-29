@@ -65,3 +65,26 @@ class HeatPumpWaterTankParams(Params):
             return self.cop_min
         else:
             return self.cop_intercept + self.cop_oat_coeff * oat
+
+    def validate_bid_params_update(self, updated: Params) -> None:
+        if not isinstance(updated, HeatPumpWaterTankParams):
+            raise TypeError(f"expected HeatPumpWaterTankParams, got {type(updated).__name__}")
+        allowed_fields = frozenset({
+            "initial_top_temp",
+            "initial_middle_temp",
+            "initial_bottom_temp",
+            "initial_thermocline1",
+            "initial_thermocline2",
+        })
+        old_dict = self.model_dump()
+        new_dict = updated.model_dump()
+        disallowed_diffs: dict[str, tuple[object, object]] = {}
+        for key, old_val in old_dict.items():
+            new_val = new_dict.get(key)
+            if old_val != new_val and key not in allowed_fields:
+                disallowed_diffs[key] = (old_val, new_val)
+        if disallowed_diffs:
+            diff_msg = "\n".join(
+                f"  {key}: {before} → {after}" for key, (before, after) in disallowed_diffs.items()
+            )
+            raise ValueError(f"Disallowed params update for bid generation:\n{diff_msg}")

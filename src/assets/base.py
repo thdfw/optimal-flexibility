@@ -42,6 +42,9 @@ class Params(BaseModel):
             raise ValueError("each timestep_duration_hours entry must be positive")
         return self
 
+    def validate_bid_params_update(self, updated: Self) -> None:
+        """Reject bid-time changes that would require rebuilding the graph."""
+
 
 S = TypeVar("S", bound=State)
 A = TypeVar("A", bound=Action)
