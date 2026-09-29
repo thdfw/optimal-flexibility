@@ -1,3 +1,5 @@
+import hashlib
+import json
 from abc import ABC, abstractmethod
 from typing import Generic, Self, TypeVar
 
@@ -44,6 +46,23 @@ class Params(BaseModel):
 S = TypeVar("S", bound=State)
 A = TypeVar("A", bound=Action)
 P = TypeVar("P", bound=Params)
+
+
+class TransitionsTableParams(BaseModel, ABC):
+    model_config = ConfigDict(frozen=True)
+
+    @classmethod
+    @abstractmethod
+    def from_asset_params(cls, params: Params) -> Self:
+        raise NotImplementedError
+
+    @property
+    def hash(self) -> str:
+        payload = json.dumps(self.model_dump(), sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(payload).hexdigest()[:8]
+
+    def cache_filename(self, asset_name: str) -> str:
+        return f"{asset_name}_{self.hash}.json.gz"
 
 
 class Model(ABC, Generic[S, A, P]):
@@ -104,6 +123,10 @@ class Asset(ABC, Generic[S, A, P]):
 
     @abstractmethod
     def initial_state(self) -> S:
+        raise NotImplementedError
+
+    @abstractmethod
+    def transitions_table_params(self) -> TransitionsTableParams:
         raise NotImplementedError
 
     def update_params(self, params: P) -> None:

@@ -18,6 +18,11 @@ logger = get_logger("transitions")
 TransitionsTable: TypeAlias = dict[str, dict[str, str]]
 
 
+def _transitions_table_path[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> Path:
+    filename = asset.transitions_table_params().cache_filename(asset.name)
+    return Path("transition_tables") / filename
+
+
 def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> TransitionsTable:
     data: TransitionsTable = {}
     for action in asset.action_space:
@@ -32,7 +37,7 @@ def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, 
         data[action_key] = state_map
         logger.info(f"Done in {round(time.time() - st)} seconds")
 
-    path = Path("transition_tables") / f"{asset.name}.json.gz"
+    path = _transitions_table_path(asset)
     path.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(path, "wt", encoding="utf-8") as f:
         json.dump(data, f, separators=(",", ":"))
@@ -42,7 +47,7 @@ def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, 
 
 
 def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> TransitionsTable:
-    path = Path("transition_tables") / f"{asset.name}.json.gz"
+    path = _transitions_table_path(asset)
     if not path.exists():
         return _build_transitions_table(asset)
 

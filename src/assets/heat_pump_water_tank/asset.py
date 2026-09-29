@@ -6,12 +6,13 @@ import numpy as np
 
 from optimizer.settings import get_logger
 
-from ..base import Asset
+from ..base import Asset, TransitionsTableParams
 
 logger = get_logger("assets.heat_pump_water_tank")
 from .action import HeatPumpWaterTankAction
 from .params import HeatPumpWaterTankParams
 from .state import HeatPumpWaterTankState
+from .transitions_table_params import HeatPumpWaterTankTransitionsTableParams
 
 if TYPE_CHECKING:
     from .model import HeatPumpWaterTankModel
@@ -29,6 +30,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     @property
     def name(self) -> str:
         return "heat_pump_water_tank"
+
+    def transitions_table_params(self) -> TransitionsTableParams:
+        return HeatPumpWaterTankTransitionsTableParams.from_asset_params(self.params)
 
     def get_state_space(self) -> list[HeatPumpWaterTankState]:
         top_temps = sorted(range(90,170+10,10), reverse=True)
