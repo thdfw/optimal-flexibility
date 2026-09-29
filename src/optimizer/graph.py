@@ -2,6 +2,7 @@ import contextlib
 import gc
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Generic
 
 from assets.base import A, Asset, P, S
@@ -46,8 +47,9 @@ class Edge(Generic[S, A]):
 
 
 class Graph(Generic[S, A, P]):
-    def __init__(self, asset: Asset[S, A, P]):
+    def __init__(self, asset: Asset[S, A, P], pat_watchdog: Callable[[], None] | None = None):
         self.logger = get_logger("graph")
+        self.pat_watchdog = pat_watchdog
         self.asset = asset
         self.params = asset.params
         self.N = asset.params.horizon
@@ -88,6 +90,9 @@ class Graph(Generic[S, A, P]):
         self.bid_edges: dict[Node[S], list[Edge[S, A]]] = {}
 
         for time_step in range(self.N):
+            if self.pat_watchdog:
+                self.pat_watchdog()
+
             for node in self.nodes[time_step]:
                 self.edges[node] = []
                 if time_step <= 1:
