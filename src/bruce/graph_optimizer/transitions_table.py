@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TypeAlias
 
 from bruce.graph_optimizer.assets.base import Action, Asset, Params, State
-from bruce.graph_optimizer.optimizer.settings import config_dir, get_logger
+from bruce.graph_optimizer.settings import config_dir, get_logger
 
 logger = get_logger("transitions")
 

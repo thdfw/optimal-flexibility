@@ -6,9 +6,7 @@ from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankParams,
     plot_graph_results,
 )
-from bruce.graph_optimizer.optimizer.bid_visualizer import plot_bid
-from bruce.graph_optimizer.optimizer.graph import Graph
-from bruce.graph_optimizer.optimizer.settings import get_logger, setup_logging
+from bruce.graph_optimizer import Graph, get_logger, plot_bid, setup_logging
 
 setup_logging()
 logger = get_logger("main")

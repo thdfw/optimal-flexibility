@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Generic
 
 from bruce.graph_optimizer.assets.base import A, Asset, P, S
-from bruce.graph_optimizer.optimizer.settings import get_logger
-from bruce.graph_optimizer.optimizer.transitions_table import get_transitions_table
+from bruce.graph_optimizer.settings import get_logger
+from bruce.graph_optimizer.transitions_table import get_transitions_table
 
 
 @dataclass(frozen=True)
