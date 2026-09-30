@@ -2,12 +2,11 @@ import contextlib
 import gc
 import time
 from dataclasses import dataclass
-from collections.abc import Callable
 from typing import Generic
 
-from assets.base import A, Asset, P, S
-from optimizer.settings import get_logger
-from optimizer.transitions_table import get_transitions_table
+from bruce.graph_optimizer.assets.base import A, Asset, P, S
+from bruce.graph_optimizer.optimizer.settings import get_logger
+from bruce.graph_optimizer.optimizer.transitions_table import get_transitions_table
 
 
 @dataclass(frozen=True)
@@ -22,6 +21,7 @@ class Node(Generic[S]):
         self.time_step = time_step
         self.pathcost = 1e9
         self.next_node: Node[S] | None = None
+        self.shortest_path_elec: list[float] = []
 
     def __repr__(self):
         return f"[{self.time_step}]{self.state}"
@@ -47,12 +47,12 @@ class Edge(Generic[S, A]):
 
 
 class Graph(Generic[S, A, P]):
-    def __init__(self, asset: Asset[S, A, P], pat_watchdog: Callable[[], None] | None = None):
+    def __init__(self, asset: Asset[S, A, P]):
         self.logger = get_logger("graph")
-        self.pat_watchdog = pat_watchdog
         self.asset = asset
         self.params = asset.params
         self.N = asset.params.horizon
+        self.initial_node: Node[S] | None = None
         self._time_and_log(self.load_transitions, "Loaded transitions table")
         self._time_and_log(self.create_nodes, "Created nodes")
         self._time_and_log(self.create_edges, "Created edges")
@@ -89,9 +89,6 @@ class Graph(Generic[S, A, P]):
         self.bid_edges: dict[Node[S], list[Edge[S, A]]] = {}
 
         for time_step in range(self.N):
-            if self.pat_watchdog:
-                self.pat_watchdog()
-
             for node in self.nodes[time_step]:
                 self.edges[node] = []
                 if time_step <= 1:
@@ -117,6 +114,7 @@ class Graph(Generic[S, A, P]):
 
     def find_shortest_path(self) -> None:
         self._time_and_log(self._find_shortest_path, "Found shortest path")
+        self._populate_shortest_path_elec()
 
     def _find_shortest_path(self) -> None:
         for time_step in range(self.N - 1, -1, -1):
@@ -127,6 +125,26 @@ class Graph(Generic[S, A, P]):
                 best_edge = min(self.edges[node], key=lambda e: e.head.pathcost + e.cost)
                 node.pathcost = best_edge.head.pathcost + best_edge.cost
                 node.next_node = best_edge.head
+
+    def _populate_shortest_path_elec(self) -> None:
+        if not hasattr(self, "nodes") or 1 not in self.nodes:
+            return
+        path_steps = getattr(self.params, "stability_penalty_horizon_hours", self.N)
+        path_steps = min(int(path_steps), self.N)
+        for node in self.nodes[1]:
+            node.shortest_path_elec = []
+            current = node
+            for _ in range(path_steps):
+                if current.next_node is None:
+                    break
+                edge_list = self.edges.get(current)
+                if not edge_list:
+                    break
+                edge = next((e for e in edge_list if e.head is current.next_node), None)
+                if edge is None:
+                    break
+                node.shortest_path_elec.append(round(edge.elec_used_kwh, 1))
+                current = current.next_node
 
     def find_initial_node(self) -> Node[S]:
         closest = self.asset.closest_state(self.asset.initial_state())
@@ -238,6 +256,30 @@ class Graph(Generic[S, A, P]):
         best_at_forecast = min(bid_edges, key=lambda e: e.head.pathcost + e.cost)
         initial_node.pathcost = best_at_forecast.head.pathcost + best_at_forecast.cost
         initial_node.next_node = best_at_forecast.head
+        self.initial_node = initial_node
 
         self.logger.info(f"Done ({len(pq_pairs)} PQ pairs found).")
         return pq_pairs
+
+    def get_next_node_at_price(self, price_usd_mwh: float) -> None:
+        """Pick the best hour-0 edge at clearing price and set ``initial_node.next_node``."""
+        if self.initial_node is None:
+            self.initial_node = self.find_initial_node()
+        initial_node = self.initial_node
+        bid_edges = self.bid_edges.get(initial_node, [])
+        if not bid_edges:
+            raise ValueError(f"No bid edges from initial node {initial_node}")
+
+        forecast_price_usd_mwh = self.params.elec_usd_mwh[0]
+        forecast_usd_kwh = forecast_price_usd_mwh / 1000
+        trial_usd_kwh = price_usd_mwh / 1000
+
+        best_edge = min(
+            bid_edges,
+            key=lambda e: (
+                e.head.pathcost
+                + e.elec_used_kwh * trial_usd_kwh
+                + (e.cost - e.elec_used_kwh * forecast_usd_kwh)
+            ),
+        )
+        initial_node.next_node = best_edge.head

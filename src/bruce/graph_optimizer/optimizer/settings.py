@@ -12,6 +12,12 @@ def _log_level_from_env() -> int:
     return getattr(logging, raw, logging.INFO)
 
 
+def config_dir() -> Path:
+    """Transition table cache (gridflo-style): ``~/.config/bruce/graph_optimizer``."""
+    root = Path(os.environ.get("BRUCE_BASE_PATH", Path.home())).resolve()
+    return root / ".config" / "bruce" / "graph_optimizer"
+
+
 def _default_log_dir() -> Path:
     base = Path(os.environ.get("OPTIMAL_FLEX_BASE_PATH", Path.home())).resolve()
     return base / ".local" / "state" / "optimal-flexibility" / "log"

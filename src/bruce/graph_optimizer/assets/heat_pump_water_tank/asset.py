@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from optimizer.settings import get_logger
+from bruce.graph_optimizer.optimizer.settings import get_logger
 
 from ..base import Asset, TransitionsTableParams
 

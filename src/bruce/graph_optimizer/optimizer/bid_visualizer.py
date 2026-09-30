@@ -3,7 +3,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from optimizer.graph import PriceQuantityPair
+from bruce.graph_optimizer.optimizer.graph import PriceQuantityPair
 
 
 def plot_bid(

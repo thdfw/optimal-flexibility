@@ -1,9 +1,30 @@
 import hashlib
 import json
+import subprocess
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Generic, Self, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+def _resolve_bruce_git_commit(default: str = "Unknown") -> str:
+    path = Path(__file__).resolve().parent
+    for _ in range(8):
+        if (path / ".git").is_dir():
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+            return default
+        if path.parent == path:
+            break
+        path = path.parent
+    return default
 
 
 class State(BaseModel):
@@ -21,13 +42,20 @@ class Action(BaseModel):
 
 
 class Params(BaseModel):
-    """horizon: number of optimization steps.
-
+    """
+    horizon: number of optimization steps.
+    start_unix_s: start time of the first step in Unix seconds.
+    site_id: site's unique identifier.
     timestep_duration_hours: duration of each step in hours (one entry per step).
+    bruce_git_commit: git commit of the bruce package.
+
     Forecast arrays must align with horizon (energies/rates for that step's interval).
     """
     horizon: int
+    start_unix_s: int
+    site_id: str
     timestep_duration_hours: list[float] = Field(default_factory=list)
+    bruce_git_commit: str = Field(default_factory=_resolve_bruce_git_commit)
 
     @model_validator(mode="after")
     def _normalize_timestep_duration_hours(self) -> Self:

@@ -1,9 +1,14 @@
+import time
 import pandas as pd
 
-from assets.heat_pump_water_tank import HeatPumpWaterTankAsset, HeatPumpWaterTankParams, plot_graph_results
-from optimizer.bid_visualizer import plot_bid
-from optimizer.graph import Graph
-from optimizer.settings import get_logger, setup_logging
+from bruce.graph_optimizer.assets.heat_pump_water_tank import (
+    HeatPumpWaterTankAsset,
+    HeatPumpWaterTankParams,
+    plot_graph_results,
+)
+from bruce.graph_optimizer.optimizer.bid_visualizer import plot_bid
+from bruce.graph_optimizer.optimizer.graph import Graph
+from bruce.graph_optimizer.optimizer.settings import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger("main")
@@ -26,6 +31,8 @@ timestep_duration_hours = [1.0] * horizon_timesteps
 
 params = HeatPumpWaterTankParams(
     horizon=horizon_timesteps,
+    start_unix_s=int(time.time()),
+    site_id="local.dev",
     timestep_duration_hours=timestep_duration_hours,
     elec_usd_mwh = df['elec_usd_mwh'].tolist()[:horizon_timesteps],
     rswt_f = df['rswt_f'].tolist()[:horizon_timesteps],

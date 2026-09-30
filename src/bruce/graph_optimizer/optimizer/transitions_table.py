@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 from typing import TypeAlias
 
-from assets.base import Action, Asset, Params, State
-from optimizer.settings import get_logger
+from bruce.graph_optimizer.assets.base import Action, Asset, Params, State
+from bruce.graph_optimizer.optimizer.settings import config_dir, get_logger
 
 logger = get_logger("transitions")
 
@@ -20,7 +20,7 @@ TransitionsTable: TypeAlias = dict[str, dict[str, str]]
 
 def _transitions_table_path[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> Path:
     filename = asset.transitions_table_params().cache_filename(asset.name)
-    return Path("transition_tables") / filename
+    return config_dir() / filename
 
 
 def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> TransitionsTable:

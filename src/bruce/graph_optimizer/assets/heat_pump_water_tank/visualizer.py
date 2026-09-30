@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from optimizer.graph import Edge, Graph, Node
+from bruce.graph_optimizer.optimizer.graph import Edge, Graph, Node
 
 from .action import HeatPumpWaterTankAction
 from .asset import HeatPumpWaterTankAsset
