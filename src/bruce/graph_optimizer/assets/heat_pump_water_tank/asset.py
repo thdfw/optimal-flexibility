@@ -22,10 +22,10 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def __init__(self, params: HeatPumpWaterTankParams):
         super().__init__(params)
-        self._compute_storage_difference_with_plan_kwh()
+        self._compute_difference_with_plans()
 
     def on_params_updated(self) -> None:
-        self._compute_storage_difference_with_plan_kwh()
+        self._compute_difference_with_plans()
 
     @property
     def name(self) -> str:
@@ -283,7 +283,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         return cost
 
-    def _compute_storage_difference_with_plan_kwh(self):
+    def _compute_difference_with_plans(self):
         current_node_energy = HeatPumpWaterTankState.build(
             top_temp=self.params.initial_top_temp,
             middle_temp=self.params.initial_middle_temp,
@@ -294,12 +294,18 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         ).energy
         if self.params.previous_estimate_storage_kwh_now is not None:
             self.storage_difference_with_plan_kwh = round(abs(current_node_energy - self.params.previous_estimate_storage_kwh_now), 2)
+        if self.params.previous_estimate_elec_usd_mwh_now is not None:
+            self.first_hour_price_difference_usd_mwh = round(abs(self.params.elec_usd_mwh[0] - self.params.previous_estimate_elec_usd_mwh_now), 2)
 
     def stability_penalty(self, time_step: int, hp_kwh_el: float) -> float:
         if not self.params.stability_penalty_enabled:
             return 0
         
-        if self.params.previous_plan_hp_kwh_el_list is None or self.params.previous_estimate_storage_kwh_now is None:
+        if (
+            self.params.previous_plan_hp_kwh_el_list is None
+            or self.params.previous_estimate_storage_kwh_now is None
+            or self.params.previous_estimate_elec_usd_mwh_now is None
+        ):
             return 0
 
         previous_plan = self.params.previous_plan_hp_kwh_el_list
@@ -311,6 +317,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             return 0
 
         if self.storage_difference_with_plan_kwh >= self.params.stability_penalty_threshold_kwh:
+            return 0
+
+        if self.first_hour_price_difference_usd_mwh >= self.params.stability_penalty_threshold_price_usd_mwh:
             return 0
 
         duration_of_this_time_step = self.params.timestep_duration_hours[time_step]

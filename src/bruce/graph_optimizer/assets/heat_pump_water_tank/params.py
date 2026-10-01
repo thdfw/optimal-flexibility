@@ -39,9 +39,11 @@ class HeatPumpWaterTankParams(Params):
     stability_penalty_weight: float = 0.5
     stability_penalty_decay: float = 0.75
     stability_penalty_threshold_kwh: float = 10.0
+    stability_penalty_threshold_price_usd_mwh: float = 15.0
     stability_penalty_horizon_hours: int = 20
     previous_plan_hp_kwh_el_list: list[float] | None = None
     previous_estimate_storage_kwh_now: float | None = None
+    previous_estimate_elec_usd_mwh_now: float | None = None
 
     # Initial state
     hp_currently_on: bool = True
