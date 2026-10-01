@@ -16,32 +16,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         super().__init__(params)
         self.states: list[HeatPumpWaterTankState] = states
         self.logger = logger
-        self.discharge_return_temp = {
-            155: 125,
-            140: 116,
-            130: 110,
-            120: 100,
-            110: 90,
-            100: 80,
-            90: 70,
-            0: 60
-        }
-
-    def get_discharge_return_temp(self, t: float) -> float:
-        sorted_items = sorted(self.discharge_return_temp.items())
-        t_keys = [k for k, _ in sorted_items]
-        if t <= t_keys[0]:
-            return self.discharge_return_temp[t_keys[0]]
-        if t >= t_keys[-1]:
-            return self.discharge_return_temp[t_keys[-1]]
-        for i in range(len(t_keys) - 1):
-            t_low, t_high = t_keys[i], t_keys[i + 1]
-            if t_low <= t <= t_high:
-                b_low = self.discharge_return_temp[t_low]
-                b_high = self.discharge_return_temp[t_high]
-                frac = (t - t_low) / (t_high - t_low) if t_high != t_low else 0.0
-                return b_low + (b_high - b_low) * frac
-        return self.discharge_return_temp[t_keys[-1]]
 
     def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction) -> HeatPumpWaterTankState:
         store_heat_in = action.heat_to_store_kwh
@@ -367,7 +341,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         if th1==th2:
             return self.discharge_tm(t, b, th2, next_state_energy)
 
-        t_cooled = self.get_discharge_return_temp(t)
+        t_cooled = self.params.rwt(t)
 
         if t_cooled == b:
             '''
@@ -506,7 +480,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         if th1==self.params.num_layers:
             return self.discharge_t(t, next_state_energy)
 
-        t_cooled = self.get_discharge_return_temp(t)
+        t_cooled = self.params.rwt(t)
 
         if t_cooled == m:
             '''
@@ -601,7 +575,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
     def discharge_t(self, t, next_state_energy) -> HeatPumpWaterTankState:
-        t_cooled = self.get_discharge_return_temp(t)
+        t_cooled = self.params.rwt(t)
         if t_cooled==t:
             return HeatPumpWaterTankState.build(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
         

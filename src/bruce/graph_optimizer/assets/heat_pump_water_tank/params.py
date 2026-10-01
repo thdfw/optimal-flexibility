@@ -23,6 +23,11 @@ class HeatPumpWaterTankParams(Params):
     cop_min: float = 1.4
     cop_min_oat_f: float = 15
 
+    # Distribution system
+    rwt_intercept: float = 44.5
+    rwt_slope: float = 0.4684
+    rwt_min: float = 50
+
     # Action range (storage change)
     hp_max_kw_th: float = 25
     max_load_kw_th: float = 20
@@ -61,6 +66,12 @@ class HeatPumpWaterTankParams(Params):
 
     def delta_T(self, swt: float) -> float:
         return self.hp_constant_lift_f
+
+    def rwt(self, swt_f: float) -> float:
+        predicted_rwt_f = self.rwt_intercept + self.rwt_slope * swt_f
+        if self.rwt_min > swt_f:
+            return swt_f
+        return max(self.rwt_min, min(predicted_rwt_f, swt_f))
 
     def COP(self, oat: float) -> float:
         if oat < self.cop_min_oat_f:
