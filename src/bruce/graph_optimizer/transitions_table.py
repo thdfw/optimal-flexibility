@@ -6,6 +6,7 @@ closest available state using the distance metric.
 
 import gzip
 import json
+import os
 import time
 from pathlib import Path
 from typing import TypeAlias
@@ -16,6 +17,16 @@ from bruce.graph_optimizer.settings import config_dir, get_logger
 logger = get_logger("transitions")
 
 TransitionsTable: TypeAlias = dict[str, dict[str, str]]
+
+_env_path = Path(__file__).resolve().parents[3] / ".env"
+if _env_path.is_file():
+    for _line in _env_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            _key, _val = _key.strip(), _val.strip().strip('"').strip("'")
+            if _key and _key not in os.environ:
+                os.environ[_key] = _val
 
 
 def _transitions_table_path[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> Path:
@@ -49,6 +60,8 @@ def _build_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, 
 def get_transitions_table[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> TransitionsTable:
     path = _transitions_table_path(asset)
     if not path.exists():
+        if os.environ.get("CAN_COMPUTE_TRANSITION_TABLES", "false").strip().lower() != "true":
+            raise RuntimeError(f"No cached transition table at {path}; set CAN_COMPUTE_TRANSITION_TABLES=true to build it.")
         return _build_transitions_table(asset)
 
     logger.info(f"Loading transitions table from {path}")
