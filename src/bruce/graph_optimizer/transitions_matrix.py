@@ -73,8 +73,8 @@ def get_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, P])
         except (ValueError, KeyError, OSError) as exc:
             logger.warning(f"Could not load transition matrix ({exc}); rebuilding")
 
-    if os.environ.get("CAN_COMPUTE_TRANSITION_TABLES", "false").strip().lower() != "true":
+    if os.environ.get("CAN_COMPUTE_TRANSITION_MATRICES", "false").strip().lower() != "true":
         raise RuntimeError(
-            f"No cached transition matrix at {path}; set CAN_COMPUTE_TRANSITION_TABLES=true to build it."
+            f"No cached transition matrix at {path}; set CAN_COMPUTE_TRANSITION_MATRICES=true to build it."
         )
     return _build_transition_matrix(asset)
