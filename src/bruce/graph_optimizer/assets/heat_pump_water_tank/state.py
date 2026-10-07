@@ -28,7 +28,7 @@ class HeatPumpWaterTankState(State):
     thermocline2: int
     energy: float
 
-    def to_key(self) -> str:
+    def __repr__(self) -> str:
         return (
             f"{self.top_temp}"
             f"({self.thermocline1})"
@@ -46,6 +46,7 @@ class HeatPumpWaterTankState(State):
         thermocline1: int,
         thermocline2: int,
         params: HeatPumpWaterTankParams,
+        index: int = -1,
     ) -> Self:
         return cls(
             top_temp=top_temp,
@@ -54,4 +55,5 @@ class HeatPumpWaterTankState(State):
             thermocline1=thermocline1,
             thermocline2=thermocline2,
             energy=compute_energy(top_temp, middle_temp, bottom_temp, thermocline1, thermocline2, params),
+            index=index,
         )
