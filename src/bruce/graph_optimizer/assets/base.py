@@ -30,15 +30,15 @@ def _resolve_bruce_git_commit(default: str = "Unknown") -> str:
 class State(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    def to_key(self) -> str:
-        raise NotImplementedError
+    index: int = -1
+    """Position in the asset's ``state_space``; matches transition matrix column. -1 if not in the space."""
 
 
 class Action(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    def to_key(self) -> str:
-        raise NotImplementedError
+    index: int
+    """Position in the asset's ``action_space``; matches transition matrix row."""
 
 
 class Params(BaseModel):
@@ -79,7 +79,7 @@ A = TypeVar("A", bound=Action)
 P = TypeVar("P", bound=Params)
 
 
-class TransitionsTableParams(BaseModel, ABC):
+class TransitionMatrixParams(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
 
     @classmethod
@@ -93,7 +93,7 @@ class TransitionsTableParams(BaseModel, ABC):
         return hashlib.sha256(payload).hexdigest()[:8]
 
     def cache_filename(self, asset_name: str) -> str:
-        return f"{asset_name}_{self.hash}.json.gz"
+        return f"{asset_name}_{self.hash}.matrix.npz"
 
 
 class Model(ABC, Generic[S, A, P]):
@@ -157,7 +157,7 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     @abstractmethod
-    def transitions_table_params(self) -> TransitionsTableParams:
+    def transition_matrix_params(self) -> TransitionMatrixParams:
         raise NotImplementedError
 
     def update_params(self, params: P) -> None:

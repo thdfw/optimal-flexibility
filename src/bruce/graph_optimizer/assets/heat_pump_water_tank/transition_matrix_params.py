@@ -1,10 +1,10 @@
 from typing import Self
 
-from ..base import Params, TransitionsTableParams
+from ..base import Params, TransitionMatrixParams
 from .params import HeatPumpWaterTankParams
 
 
-class HeatPumpWaterTankTransitionsTableParams(TransitionsTableParams):
+class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
     num_layers: int
     storage_volume_gallons: float
     hp_constant_lift_f: float

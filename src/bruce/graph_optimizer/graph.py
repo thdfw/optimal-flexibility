@@ -6,7 +6,7 @@ from typing import Generic
 
 from bruce.graph_optimizer.assets.base import A, Asset, P, S
 from bruce.graph_optimizer.settings import get_logger
-from bruce.graph_optimizer.transitions_table import get_transitions_table
+from bruce.graph_optimizer.transitions_matrix import get_transition_matrix
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class Graph(Generic[S, A, P]):
         self.params = asset.params
         self.N = asset.params.horizon
         self.initial_node: Node[S] | None = None
-        self._time_and_log(self.load_transitions, "Loaded transitions table")
+        self._time_and_log(self.load_transitions, "Loaded transition matrix")
         self._time_and_log(self.create_nodes, "Created nodes")
         self._time_and_log(self.create_edges, "Created edges")
 
@@ -64,8 +64,7 @@ class Graph(Generic[S, A, P]):
         self.logger.info(f"{label} in {elapsed} seconds")
 
     def load_transitions(self) -> None:
-        self.transitions = get_transitions_table(self.asset)
-        self.states_by_key = {state.to_key(): state for state in self.asset.state_space}
+        self.transition_matrix = get_transition_matrix(self.asset)
 
     def create_nodes(self):
         """For every time step, create a layer of nodes corresponding to all available states."""
@@ -97,11 +96,11 @@ class Graph(Generic[S, A, P]):
                 available_actions = self.asset.get_available_actions(node.state, time_step)
 
                 for action in available_actions:
-                    next_state_key = self.transitions[action.to_key()][node.state.to_key()]
-                    next_state = self.states_by_key[next_state_key]
+                    next_state_index = int(self.transition_matrix[action.index, node.state.index])
+                    next_state = self.asset.state_space[next_state_index]
                     if not self.asset.allow_transition(node.state, next_state, action, time_step):
                         continue
-                    next_node = self.nodes_by[time_step + 1][next_state]
+                    next_node = self.nodes[time_step+1][next_state_index]
                     cost = self.asset.cost(node.state, next_state, action, time_step)
                     elec_used_kwh = self.asset.elec_used_kwh(node.state, action, time_step)
                     edge = Edge(node, next_node, cost, action, elec_used_kwh)
@@ -109,8 +108,7 @@ class Graph(Generic[S, A, P]):
                     if time_step <= 1:
                         self.bid_edges[node].append(edge)
 
-        del self.transitions
-        del self.states_by_key
+        del self.transition_matrix
 
     def find_shortest_path(self) -> None:
         self._time_and_log(self._find_shortest_path, "Found shortest path")

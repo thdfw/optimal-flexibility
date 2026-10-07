@@ -6,13 +6,13 @@ import numpy as np
 
 from bruce.graph_optimizer.settings import get_logger
 
-from ..base import Asset, TransitionsTableParams
+from ..base import Asset, TransitionMatrixParams
 
 logger = get_logger("assets.heat_pump_water_tank")
 from .action import HeatPumpWaterTankAction
 from .params import HeatPumpWaterTankParams
 from .state import HeatPumpWaterTankState
-from .transitions_table_params import HeatPumpWaterTankTransitionsTableParams
+from .transition_matrix_params import HeatPumpWaterTankTransitionMatrixParams
 
 if TYPE_CHECKING:
     from .model import HeatPumpWaterTankModel
@@ -23,16 +23,19 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def __init__(self, params: HeatPumpWaterTankParams):
         super().__init__(params)
         self._compute_difference_with_plans()
+        self._available_actions_cache: list[dict[float, tuple[HeatPumpWaterTankAction, ...]]] = []
+        self._build_available_actions_cache()
 
     def on_params_updated(self) -> None:
         self._compute_difference_with_plans()
+        self._build_available_actions_cache()
 
     @property
     def name(self) -> str:
         return "heat_pump_water_tank"
 
-    def transitions_table_params(self) -> TransitionsTableParams:
-        return HeatPumpWaterTankTransitionsTableParams.from_asset_params(self.params)
+    def transition_matrix_params(self) -> TransitionMatrixParams:
+        return HeatPumpWaterTankTransitionMatrixParams.from_asset_params(self.params)
 
     def get_state_space(self) -> list[HeatPumpWaterTankState]:
         top_temps = sorted(range(90,170+10,10), reverse=True)
@@ -91,6 +94,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     thermocline1=th1,
                     thermocline2=th2,
                     params=self.params,
+                    index=len(states),
                 )
                 states.append(state)
 
@@ -116,54 +120,61 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         ]
         self._heat_to_store_discretized_array = np.array(self._heat_to_store_discretized)
         self._action_by_heat_to_store_kwh = {
-            heat: HeatPumpWaterTankAction(heat_to_store_kwh=heat)
-            for heat in self._heat_to_store_discretized
+            heat: HeatPumpWaterTankAction(heat_to_store_kwh=heat, index=i)
+            for i, heat in enumerate(self._heat_to_store_discretized)
         }
         return list(self._action_by_heat_to_store_kwh.values())
 
+    def _build_available_actions_cache(self) -> None:
+        unique_energies = {state.energy for state in self.state_space}
+        self._available_actions_cache = []
+        for time_step in range(self.params.horizon):
+            by_energy: dict[float, tuple[HeatPumpWaterTankAction, ...]] = {}
+            for energy in unique_energies:
+                dt = self.params.timestep_duration_hours[time_step]
+                load = self.params.load_kwh[time_step]
+                losses = self.params.storage_losses_percent/100 * (energy-self.min_state_energy) * dt
+                cop = self.params.COP(self.params.oat_f[time_step])
+
+                if time_step==0:
+                    turn_on_minutes = self.params.hp_turn_on_minutes if not self.params.hp_currently_on else 0
+                else:
+                    turn_on_minutes = self.params.hp_turn_on_minutes/2
+
+                max_hp_elec_in = (1-min(turn_on_minutes, dt*60)/(dt*60)) * self.params.hp_max_kw_elec * dt
+                max_hp_heat_out = max_hp_elec_in * cop
+
+                hp_heat_out_levels = [0]
+
+                heat_to_store_for_full = self.max_state_energy - energy
+                hp_heat_out_for_full = heat_to_store_for_full + load + losses
+
+                min_charge_kwh = (self.params.hp_min_kw_th_first_step if time_step==0 else self.params.hp_min_kw_th_other_steps) * dt
+
+                if hp_heat_out_for_full >= max_hp_heat_out:
+                    hp_heat_out_levels += [max_hp_heat_out]
+                elif hp_heat_out_for_full > min_charge_kwh:
+                    hp_heat_out_levels += [hp_heat_out_for_full]
+
+                if time_step==0 and load>0 and self.params.hp_currently_on:
+                    hp_heat_out_levels += [load+losses]
+
+                heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
+                actions: list[HeatPumpWaterTankAction] = []
+                seen: set[HeatPumpWaterTankAction] = set()
+                for heat_to_store_desired in heat_to_store_options:
+                    idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
+                    heat = float(self._heat_to_store_discretized_array[idx])
+                    action = self._action_by_heat_to_store_kwh[heat]
+                    if action not in seen:
+                        seen.add(action)
+                        actions.append(action)
+
+                by_energy[energy] = tuple(actions)
+            self._available_actions_cache.append(by_energy)
+
     def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
-        dt = self.params.timestep_duration_hours[time_step]
-        load = self.params.load_kwh[time_step]
-        losses = self.params.storage_losses_percent/100 * (state.energy-self.min_state_energy) * dt
-        cop = self.params.COP(self.params.oat_f[time_step])
-
-        if time_step==0:
-            turn_on_minutes = self.params.hp_turn_on_minutes if not self.params.hp_currently_on else 0
-        else:
-            turn_on_minutes = self.params.hp_turn_on_minutes/2
-
-        max_hp_elec_in = (1-min(turn_on_minutes, dt*60)/(dt*60)) * self.params.hp_max_kw_elec * dt
-        max_hp_heat_out = max_hp_elec_in * cop
-
-        hp_heat_out_levels = [0]
-
-        # Can not put out more heat than what would fill the storage
-        heat_to_store_for_full = self.max_state_energy - state.energy
-        hp_heat_out_for_full = heat_to_store_for_full + load + losses
-
-        min_charge_kwh = (self.params.hp_min_kw_th_first_step if time_step==0 else self.params.hp_min_kw_th_other_steps) * dt
-
-        if hp_heat_out_for_full >= max_hp_heat_out:
-            hp_heat_out_levels += [max_hp_heat_out]
-        elif hp_heat_out_for_full > min_charge_kwh:
-            hp_heat_out_levels += [hp_heat_out_for_full]
-
-        # If the HP is already on, add the "meet the load" edge in the first step
-        if time_step==0 and load>0 and self.params.hp_currently_on:
-            hp_heat_out_levels += [load+losses]
-
-        heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
-        actions: list[HeatPumpWaterTankAction] = []
-        seen: set[HeatPumpWaterTankAction] = set()
-        for heat_to_store_desired in heat_to_store_options:
-            idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
-            heat = float(self._heat_to_store_discretized_array[idx])
-            action = self._action_by_heat_to_store_kwh[heat]
-            if action not in seen:
-                seen.add(action)
-                actions.append(action)
-        
-        return actions
+        return list(self._available_actions_cache[time_step][state.energy])
 
     def allow_transition(
         self,
