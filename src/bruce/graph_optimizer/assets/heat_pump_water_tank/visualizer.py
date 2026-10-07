@@ -151,7 +151,7 @@ def plot_graph_results(
         params.load_kwh[t] / params.timestep_duration_hours[t]
         for t in range(params.horizon)
     ]
-    prices = params.elec_usd_mwh
+    prices = params.elec_price_mwh
 
     fig, ax = plt.subplots(3, 1, sharex=False, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
     fig.suptitle(f"Horizon: {params.horizon} steps — Cost: {round(initial_node.pathcost, 2)} $", fontsize=10)

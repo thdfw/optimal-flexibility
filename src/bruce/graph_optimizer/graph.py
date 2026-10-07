@@ -11,7 +11,7 @@ from bruce.graph_optimizer.transitions_matrix import get_transition_matrix
 
 @dataclass(frozen=True)
 class PriceQuantityPair:
-    price_usd_mwh: float
+    price_mwh: float
     quantity_kwh: float
 
 
@@ -214,7 +214,7 @@ class Graph(Generic[S, A, P]):
             with contextlib.suppress(AttributeError):
                 delattr(self, attr)
 
-    def generate_bid(self, forecast_price_usd_mwh: float, updated_params: P | None = None) -> list[PriceQuantityPair]:
+    def generate_bid(self, forecast_price_mwh: float, updated_params: P | None = None) -> list[PriceQuantityPair]:
         if updated_params is not None:
             self.params.validate_bid_params_update(updated_params)
             self.asset.update_params(updated_params)
@@ -226,27 +226,30 @@ class Graph(Generic[S, A, P]):
         if not bid_edges:
             raise ValueError(f"No bid edges from initial node {initial_node}")
 
-        price_range_usd_mwh = sorted(set(range(-100, 2000)) | {forecast_price_usd_mwh})
-        forecast_usd_kwh = forecast_price_usd_mwh / 1000
-        
+        bid_min = int(self.params.bid_min_price_mwh)
+        bid_max = int(self.params.bid_max_price_mwh)
+        price_range_mwh = sorted(set(range(bid_min, bid_max)) | {forecast_price_mwh})
+        forecast_price_kwh = forecast_price_mwh / 1000
+
         pq_pairs: list[PriceQuantityPair] = []
 
-        for trial_price in price_range_usd_mwh:
-            trial_usd_kwh = float(trial_price) / 1000
+        for trial_price in price_range_mwh:
+            trial_price_kwh = float(trial_price) / 1000
 
             best_edge = min(
-                bid_edges, 
-                key=lambda e: 
-                e.head.pathcost 
-                + e.elec_used_kwh * trial_usd_kwh # Cost of elec used at trial price
-                + (e.cost - e.elec_used_kwh * forecast_usd_kwh), # Cost of penalties
+                bid_edges,
+                key=lambda e: (
+                    e.head.pathcost
+                    + e.elec_used_kwh * trial_price_kwh # Cost of elec used at trial price
+                    + (e.cost - e.elec_used_kwh * forecast_price_kwh) # Cost of penalties
+                ),
             )
             best_quantity = max(0, best_edge.elec_used_kwh)
 
             if not pq_pairs or best_quantity - pq_pairs[-1].quantity_kwh > 0.01:
                 pq_pairs.append(
                     PriceQuantityPair(
-                        price_usd_mwh=float(trial_price),
+                        price_mwh=float(trial_price),
                         quantity_kwh=best_quantity,
                     )
                 )
@@ -259,7 +262,7 @@ class Graph(Generic[S, A, P]):
         self.logger.info(f"Done ({len(pq_pairs)} PQ pairs found).")
         return pq_pairs
 
-    def get_next_node_at_price(self, price_usd_mwh: float) -> None:
+    def get_next_node_at_price(self, price_mwh: float) -> None:
         """Pick the best hour-0 edge at clearing price and set ``initial_node.next_node``."""
         if self.initial_node is None:
             self.initial_node = self.find_initial_node()
@@ -268,16 +271,16 @@ class Graph(Generic[S, A, P]):
         if not bid_edges:
             raise ValueError(f"No bid edges from initial node {initial_node}")
 
-        forecast_price_usd_mwh = self.params.elec_usd_mwh[0]
-        forecast_usd_kwh = forecast_price_usd_mwh / 1000
-        trial_usd_kwh = price_usd_mwh / 1000
+        forecast_price_mwh = self.params.elec_price_mwh[0]
+        forecast_price_kwh = forecast_price_mwh / 1000
+        trial_price_kwh = price_mwh / 1000
 
         best_edge = min(
             bid_edges,
             key=lambda e: (
                 e.head.pathcost
-                + e.elec_used_kwh * trial_usd_kwh
-                + (e.cost - e.elec_used_kwh * forecast_usd_kwh)
+                + e.elec_used_kwh * trial_price_kwh
+                + (e.cost - e.elec_used_kwh * forecast_price_kwh)
             ),
         )
         initial_node.next_node = best_edge.head

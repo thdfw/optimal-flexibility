@@ -48,12 +48,16 @@ class Params(BaseModel):
     site_id: site's unique identifier.
     timestep_duration_hours: duration of each step in hours (one entry per step).
     bruce_git_commit: git commit of the bruce package.
-
-    Forecast arrays must align with horizon (energies/rates for that step's interval).
+    elec_price_mwh: electricity price forecast per step, in currency units per MWh.
+    bid_min_price_mwh: minimum price for bids, in currency units per MWh.
+    bid_max_price_mwh: maximum price for bids, in currency units per MWh.
     """
     horizon: int
     start_unix_s: int
     site_id: str
+    elec_price_mwh: list[float]
+    bid_min_price_mwh: float = -100.0
+    bid_max_price_mwh: float = 2000.0
     timestep_duration_hours: list[float] = Field(default_factory=list)
     bruce_git_commit: str = Field(default_factory=_resolve_bruce_git_commit)
 
@@ -68,6 +72,16 @@ class Params(BaseModel):
             )
         if any(dt <= 0 for dt in self.timestep_duration_hours):
             raise ValueError("each timestep_duration_hours entry must be positive")
+        if len(self.elec_price_mwh) != self.horizon:
+            raise ValueError(
+                f"elec_price_mwh length ({len(self.elec_price_mwh)}) "
+                f"must equal horizon ({self.horizon})"
+            )
+        if self.bid_min_price_mwh >= self.bid_max_price_mwh:
+            raise ValueError(
+                f"bid_min_price_mwh ({self.bid_min_price_mwh}) "
+                f"must be less than bid_max_price_mwh ({self.bid_max_price_mwh})"
+            )
         return self
 
     def validate_bid_params_update(self, updated: Self) -> None:
