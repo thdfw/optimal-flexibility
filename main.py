@@ -21,10 +21,12 @@ input_data = {
     'oat_f': [30]*len(LMP)
 }
 df = pd.DataFrame(input_data)
+TIMES_LONGER = 1
+df = pd.concat([df]*TIMES_LONGER, ignore_index=True)
 
 # df = pd.read_csv('data/input_data.csv')
 
-horizon_timesteps = 48
+horizon_timesteps = 48*TIMES_LONGER
 timestep_duration_hours = [1.0] * horizon_timesteps
 
 params = HeatPumpWaterTankParams(
@@ -40,7 +42,7 @@ params = HeatPumpWaterTankParams(
 asset = HeatPumpWaterTankAsset(params)
 graph = Graph(asset)
 graph.find_shortest_path()
-# plot_graph_results(graph)
+plot_graph_results(graph)
 
 forecast_price = params.elec_price_mwh[0]
 pq_pairs = graph.generate_bid(forecast_price_mwh=forecast_price)

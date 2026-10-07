@@ -153,7 +153,7 @@ def plot_graph_results(
     ]
     prices = params.elec_price_mwh
 
-    fig, ax = plt.subplots(3, 1, sharex=False, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
+    fig, ax = plt.subplots(3, 1, sharex=True, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
     fig.suptitle(f"Horizon: {params.horizon} steps — Cost: {round(initial_node.pathcost, 2)} $", fontsize=10)
 
     penalties = [
@@ -286,10 +286,6 @@ def plot_graph_results(
     max_penalty = max(max(rswt_vals, default=0), max(stab_vals, default=0))
     if max_penalty > 0:
         ax[2].set_ylim([0, max_penalty * 1.3])
-
-    xlim = ax[1].get_xlim()
-    ax[0].set_xlim(xlim)
-    ax[2].set_xlim(xlim)
 
     plt.tight_layout()
     if save_as is not None:
