@@ -1,3 +1,7 @@
+from typing import Self
+
+from pydantic import model_validator
+
 from ..base import Params
 
 
@@ -23,9 +27,10 @@ class HeatPumpWaterTankParams(Params):
     cop_min: float = 1.4
     cop_min_oat_f: float = 15
 
-    # Distribution system
-    rwt_intercept: float = 44.5
-    rwt_slope: float = 0.4684
+    # Distribution system: RWT vs SWT per load bucket ([0, u0), [u0, u1), …, [last, inf) kWh)
+    load_bucket_upper_kwh: list[float] = [2.0, 4.0, 6.0, 8.0]
+    rwt_intercept_by_bucket: list[float] = [44.5, 44.5, 44.5, 44.5, 44.5]
+    rwt_slope_by_bucket: list[float] = [0.4684, 0.4684, 0.4684, 0.4684, 0.4684]
     rwt_min: float = 50
 
     # Action range (storage change)
@@ -63,11 +68,30 @@ class HeatPumpWaterTankParams(Params):
     load_kwh: list[float]
     oat_f: list[float]
 
+    @model_validator(mode="after")
+    def _validate_load_rwt_buckets(self) -> Self:
+        n = len(self.load_bucket_upper_kwh) + 1
+        if len(self.rwt_intercept_by_bucket) != n or len(self.rwt_slope_by_bucket) != n:
+            raise ValueError(
+                "rwt_intercept_by_bucket and rwt_slope_by_bucket length must be "
+                f"len(load_bucket_upper_kwh) + 1 ({n})"
+            )
+        if any(
+            self.load_bucket_upper_kwh[i] <= self.load_bucket_upper_kwh[i - 1]
+            for i in range(1, len(self.load_bucket_upper_kwh))
+        ):
+            raise ValueError("load_bucket_upper_kwh must be strictly increasing")
+        if any(u <= 0 for u in self.load_bucket_upper_kwh):
+            raise ValueError("load_bucket_upper_kwh entries must be positive")
+        return self
+
     def delta_T(self, swt: float) -> float:
         return self.hp_constant_lift_f
 
-    def rwt(self, swt_f: float) -> float:
-        predicted_rwt_f = self.rwt_intercept + self.rwt_slope * swt_f
+    def rwt(self, swt_f: float, bucket: int = 0) -> float:
+        intercept = self.rwt_intercept_by_bucket[bucket]
+        slope = self.rwt_slope_by_bucket[bucket]
+        predicted_rwt_f = intercept + slope * swt_f
         if self.rwt_min > swt_f:
             return swt_f
         return max(self.rwt_min, min(predicted_rwt_f, swt_f))

@@ -209,8 +209,23 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         from .model import HeatPumpWaterTankModel
         return HeatPumpWaterTankModel(self.params, self.state_space)
 
-    def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction) -> HeatPumpWaterTankState:
-        return self.model.next_state(state, action)
+    def transition_matrix_variant_count(self) -> int:
+        return len(self.params.load_bucket_upper_kwh) + 1
+
+    def action_uses_transition_variants(self, action: HeatPumpWaterTankAction) -> bool:
+        return action.heat_to_store_kwh < -0.5
+
+    def transition_variant(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> int:
+        if not self.action_uses_transition_variants(action):
+            return 0
+        load = max(0.0, self.params.load_kwh[time_step])
+        for i, upper in enumerate(self.params.load_bucket_upper_kwh):
+            if load < upper:
+                return i
+        return len(self.params.load_bucket_upper_kwh)
+
+    def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, transition_variant: int = 0,) -> HeatPumpWaterTankState:
+        return self.model.next_state(state, action, transition_variant=transition_variant)
 
     def _temps_by_layer(self, state: HeatPumpWaterTankState) -> list[float]:
         n = self.params.num_layers

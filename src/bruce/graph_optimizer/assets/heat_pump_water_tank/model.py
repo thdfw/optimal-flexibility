@@ -17,7 +17,8 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         self.states: list[HeatPumpWaterTankState] = states
         self.logger = logger
 
-    def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction) -> HeatPumpWaterTankState:
+    def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, transition_variant: int = 0) -> HeatPumpWaterTankState:
+        self._load_bucket = transition_variant
         store_heat_in = action.heat_to_store_kwh
         if store_heat_in > 0:
             self.logger.debug(f"Charge {state} by {store_heat_in} kWh")
@@ -341,7 +342,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         if th1==th2:
             return self.discharge_tm(t, b, th2, next_state_energy)
 
-        t_cooled = self.params.rwt(t)
+        t_cooled = self.params.rwt(t, self._load_bucket)
 
         if t_cooled == b:
             '''
@@ -480,7 +481,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         if th1==self.params.num_layers:
             return self.discharge_t(t, next_state_energy)
 
-        t_cooled = self.params.rwt(t)
+        t_cooled = self.params.rwt(t, self._load_bucket)
 
         if t_cooled == m:
             '''
@@ -575,7 +576,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 return min(list(candidate_states), key=lambda x: abs(x.energy-next_state_energy))
 
     def discharge_t(self, t, next_state_energy) -> HeatPumpWaterTankState:
-        t_cooled = self.params.rwt(t)
+        t_cooled = self.params.rwt(t, self._load_bucket)
         if t_cooled==t:
             return HeatPumpWaterTankState.build(t, t, t, self.params.num_layers, self.params.num_layers, self.params)
         
