@@ -31,21 +31,38 @@ def _transition_matrix_path[S: State, A: Action, P: Params](asset: Asset[S, A, P
     return config_dir() / filename
 
 
-def _expected_matrix_shape[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> tuple[int, int]:
-    return len(asset.action_space), len(asset.state_space)
+def _expected_matrix_shape[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> tuple[int, ...]:
+    n_actions = len(asset.action_space)
+    n_states = len(asset.state_space)
+    n_variants = asset.transition_matrix_variant_count()
+    if n_variants <= 1:
+        return (n_actions, n_states)
+    return (n_actions, n_states, n_variants)
 
 
 def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> np.ndarray:
-    n_actions, n_states = _expected_matrix_shape(asset)
-    matrix = np.empty((n_actions, n_states), dtype=np.int32)
+    shape = _expected_matrix_shape(asset)
+    matrix = np.empty(shape, dtype=np.int32)
+    n_variants = asset.transition_matrix_variant_count()
     for action in asset.action_space:
         st = time.time()
         logger.info(f"Computing all transitions for action: {action}")
         action_i = action.index
-        for state in asset.state_space:
-            next_state = asset.next_state(state, action)
-            closest = asset.closest_state(next_state)
-            matrix[action_i, state.index] = closest.index
+        variant_range = (
+            range(n_variants)
+            if asset.action_uses_transition_variants(action)
+            else range(1)
+        )
+        for variant in variant_range:
+            for state in asset.state_space:
+                next_state = asset.next_state(state, action, transition_variant=variant)
+                closest = asset.closest_state(next_state)
+                if len(shape) == 2:
+                    matrix[action_i, state.index] = closest.index
+                else:
+                    matrix[action_i, state.index, variant] = closest.index
+        if len(shape) == 3 and not asset.action_uses_transition_variants(action):
+            matrix[action_i, :, 1:] = matrix[action_i, :, :1]
         logger.info(f"Done in {round(time.time() - st)} seconds")
 
     path = _transition_matrix_path(asset)
@@ -56,7 +73,7 @@ def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, 
 
 
 def get_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> np.ndarray:
-    """Load or build transition matrix: ``matrix[action.index, state.index]`` -> next ``state.index``."""
+    """Load or build transition matrix -> next ``state.index`` (2D or 3D with transition variants)."""
     path = _transition_matrix_path(asset)
     expected_shape = _expected_matrix_shape(asset)
 

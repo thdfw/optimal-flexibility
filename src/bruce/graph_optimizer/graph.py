@@ -96,7 +96,15 @@ class Graph(Generic[S, A, P]):
                 available_actions = self.asset.get_available_actions(node.state, time_step)
 
                 for action in available_actions:
-                    next_state_index = int(self.transition_matrix[action.index, node.state.index])
+                    variant = self.asset.transition_variant(node.state, action, time_step)
+                    if self.transition_matrix.ndim == 2:
+                        next_state_index = int(
+                            self.transition_matrix[action.index, node.state.index]
+                        )
+                    else:
+                        next_state_index = int(
+                            self.transition_matrix[action.index, node.state.index, variant]
+                        )
                     next_state = self.asset.state_space[next_state_index]
                     if not self.asset.allow_transition(node.state, next_state, action, time_step):
                         continue

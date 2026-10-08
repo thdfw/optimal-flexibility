@@ -115,7 +115,7 @@ class Model(ABC, Generic[S, A, P]):
         self.params = params
 
     @abstractmethod
-    def next_state(self, state: S, action: A) -> S:
+    def next_state(self, state: S, action: A, transition_variant: int = 0) -> S:
         raise NotImplementedError
 
 
@@ -148,8 +148,17 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     @abstractmethod
-    def next_state(self, state: S, action: A) -> S:
+    def next_state(self, state: S, action: A, transition_variant: int = 0) -> S:
         raise NotImplementedError
+
+    def transition_matrix_variant_count(self) -> int:
+        return 1
+
+    def action_uses_transition_variants(self, action: A) -> bool:
+        return False
+
+    def transition_variant(self, state: S, action: A, time_step: int) -> int:
+        return 0
 
     def closest_state(self, state: S) -> S:
         return min(self.state_space, key=lambda candidate: self.state_distance(state, candidate))
