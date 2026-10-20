@@ -42,6 +42,7 @@ def _expected_matrix_shape[S: State, A: Action, P: Params](asset: Asset[S, A, P]
 
 def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, P]) -> np.ndarray:
     shape = _expected_matrix_shape(asset)
+    logger.info(f"Building transition matrix with shape: {shape}")
     matrix = np.empty(shape, dtype=np.int32)
     n_variants = asset.transition_matrix_variant_count()
     for action in asset.action_space:
