@@ -19,7 +19,10 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, transition_variant: int = 0) -> HeatPumpWaterTankState:
         self._load_bucket = transition_variant
-        store_heat_in = action.heat_to_store_kwh
+        if action.e1_heat_to_store_kwh != 0.0:
+            return self.heat_tank1_elements(state, action.e1_heat_to_store_kwh)
+
+        store_heat_in = action.hp_heat_to_store_kwh
         if store_heat_in > 0:
             self.logger.debug(f"Charge {state} by {store_heat_in} kWh")
             next_state = self.charge(state, store_heat_in)
@@ -30,6 +33,47 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             self.logger.debug(f"Stay at {state}")
             next_state = state
         return next_state
+
+    def _min_state_energy(self) -> float:
+        return HeatPumpWaterTankState.build(
+            70,
+            70,
+            70,
+            self.params.num_layers,
+            self.params.num_layers,
+            self.params,
+        ).energy
+
+    def _storage_losses_kwh(self, state: HeatPumpWaterTankState, dt_hours: float) -> float:
+        return (
+            self.params.storage_losses_percent
+            / 100
+            * (state.energy - self._min_state_energy())
+            * dt_hours
+        )
+
+    def heat_tank1_elements(
+        self, state: HeatPumpWaterTankState, e1_heat_to_store_kwh: float
+    ) -> HeatPumpWaterTankState:
+        dt_hours = 1.0
+        if any(dt != dt_hours for dt in self.params.timestep_duration_hours):
+            raise ValueError(
+                "tank1 element dynamics require timestep_duration_hours of 1.0 for every step"
+            )
+
+        gross_kwh = self.params.tank1_elements_kw * dt_hours
+        losses = self._storage_losses_kwh(state, dt_hours)
+        load_kwh = gross_kwh - e1_heat_to_store_kwh - losses
+
+        self.logger.debug(
+            "Tank1 elements on: net to storage %s kWh, gross %s kWh, "
+            "losses %s kWh, inferred load %s kWh",
+            round(e1_heat_to_store_kwh, 2),
+            round(gross_kwh, 2),
+            round(losses, 2),
+            round(load_kwh, 2),
+        )
+        return state
 
     def charge(self, n: HeatPumpWaterTankState, store_heat_in: float) -> HeatPumpWaterTankState:
         next_state_energy = n.energy + store_heat_in

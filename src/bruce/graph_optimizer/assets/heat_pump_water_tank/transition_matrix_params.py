@@ -14,6 +14,7 @@ class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
     rwt_min: float
     max_load_kw_th: float
     hp_max_kw_th: float
+    tank1_elements_kw: float
     max_timestep_duration_hours: float
 
     @classmethod
@@ -30,5 +31,6 @@ class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
             rwt_min=params.rwt_min,
             max_load_kw_th=params.max_load_kw_th,
             hp_max_kw_th=params.hp_max_kw_th,
+            tank1_elements_kw=params.tank1_elements_kw,
             max_timestep_duration_hours=max(params.timestep_duration_hours),
         )

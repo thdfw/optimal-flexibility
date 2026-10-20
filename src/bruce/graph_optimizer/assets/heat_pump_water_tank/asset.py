@@ -111,19 +111,40 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         max_dt = max(self.params.timestep_duration_hours)
         max_load_kwh = self.params.max_load_kw_th * max_dt
         max_hp_kwh = self.params.hp_max_kw_th * max_dt
-        self._heat_to_store_discretized = [
+        max_tank1_net_kwh = self.params.tank1_elements_kw * max_dt
+        self._hp_heat_to_store_discretized = [
             x / 10
             for x in range(
                 -int(max_load_kwh * 10),
                 int((max_hp_kwh + 1) * 10) + 1,
             )
         ]
-        self._heat_to_store_discretized_array = np.array(self._heat_to_store_discretized)
-        self._action_by_heat_to_store_kwh = {
-            heat: HeatPumpWaterTankAction(heat_to_store_kwh=heat, index=i)
-            for i, heat in enumerate(self._heat_to_store_discretized)
-        }
-        return list(self._action_by_heat_to_store_kwh.values())
+        min_e1_net_kwh = max_tank1_net_kwh - max_load_kwh
+        self._e1_heat_to_store_discretized = [
+            x / 10
+            for x in range(
+                int(min_e1_net_kwh * 10),
+                int(max_tank1_net_kwh * 10) + 1,
+            )
+            if x != 0
+        ]
+        self._hp_heat_to_store_discretized_array = np.array(self._hp_heat_to_store_discretized)
+        self._e1_heat_to_store_discretized_array = np.array(self._e1_heat_to_store_discretized)
+
+        actions: list[HeatPumpWaterTankAction] = []
+        self._action_by_hp_heat_to_store_kwh = {}
+        for heat in self._hp_heat_to_store_discretized:
+            action = HeatPumpWaterTankAction(hp_heat_to_store_kwh=heat, index=len(actions))
+            self._action_by_hp_heat_to_store_kwh[heat] = action
+            actions.append(action)
+
+        self._action_by_e1_heat_to_store_kwh = {}
+        for net_kwh in self._e1_heat_to_store_discretized:
+            action = HeatPumpWaterTankAction(e1_heat_to_store_kwh=net_kwh, index=len(actions))
+            self._action_by_e1_heat_to_store_kwh[net_kwh] = action
+            actions.append(action)
+
+        return actions
 
     def _build_available_actions_cache(self) -> None:
         unique_energies = {state.energy for state in self.state_space}
@@ -163,12 +184,27 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 actions: list[HeatPumpWaterTankAction] = []
                 seen: set[HeatPumpWaterTankAction] = set()
                 for heat_to_store_desired in heat_to_store_options:
-                    idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
-                    heat = float(self._heat_to_store_discretized_array[idx])
-                    action = self._action_by_heat_to_store_kwh[heat]
+                    idx = int(np.abs(self._hp_heat_to_store_discretized_array - heat_to_store_desired).argmin())
+                    heat = float(self._hp_heat_to_store_discretized_array[idx])
+                    action = self._action_by_hp_heat_to_store_kwh[heat]
                     if action not in seen:
                         seen.add(action)
                         actions.append(action)
+
+                if dt == 1.0:
+                    e1_net_desired = (
+                        self.params.tank1_elements_kw * dt - load - losses
+                    )
+                    idx = int(
+                        np.abs(
+                            self._e1_heat_to_store_discretized_array - e1_net_desired
+                        ).argmin()
+                    )
+                    e1_net = float(self._e1_heat_to_store_discretized_array[idx])
+                    tank1_action = self._action_by_e1_heat_to_store_kwh[e1_net]
+                    if tank1_action not in seen:
+                        seen.add(tank1_action)
+                        actions.append(tank1_action)
 
                 by_energy[energy] = tuple(actions)
             self._available_actions_cache.append(by_energy)
@@ -183,16 +219,20 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         action: HeatPumpWaterTankAction,
         time_step: int,
     ) -> bool:
-        if action.heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
+        if action.hp_heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
+            return False
+        if action.e1_heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
             return False
         return True
 
     def elec_used_kwh(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> float:
         dt = self.params.timestep_duration_hours[time_step]
+        if action.e1_heat_to_store_kwh != 0.0:
+            return self.params.tank1_elements_kw * dt
         load = self.params.load_kwh[time_step]
         losses = self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
         cop = self.params.COP(self.params.oat_f[time_step])
-        heat_from_hp = max(0.0, load + losses + action.heat_to_store_kwh)
+        heat_from_hp = max(0.0, load + losses + action.hp_heat_to_store_kwh)
         return heat_from_hp / cop
 
     def initial_state(self) -> HeatPumpWaterTankState:
@@ -213,7 +253,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return len(self.params.load_bucket_upper_kwh) + 1
 
     def action_uses_transition_variants(self, action: HeatPumpWaterTankAction) -> bool:
-        return action.heat_to_store_kwh < -0.5
+        return action.hp_heat_to_store_kwh < -0.5
 
     def transition_variant(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> int:
         if not self.action_uses_transition_variants(action):
@@ -276,38 +316,52 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     ) -> float:
 
         elec_price_kwh = self.params.elec_price_mwh[time_step] / 1000
-        rswt = self.params.rswt_f[time_step]
-        load = self.params.load_kwh[time_step]
 
         hp_kwh_el = self.elec_used_kwh(state, action, time_step)
         cost = elec_price_kwh * hp_kwh_el
 
-        # RSWT penalty
-        if action.heat_to_store_kwh<0 and load>0 and (state.top_temp<rswt or next_state.top_temp<rswt):
-            if state.top_temp == next_state.top_temp:
-                swt = state.top_temp
-            else:
-                if state.thermocline2 > state.thermocline1:
-                    temp_below_top_now = state.middle_temp
-                    num_layers_available = state.thermocline2 - state.thermocline1
-                else:
-                    temp_below_top_now = state.bottom_temp
-                    num_layers_available = self.params.num_layers - state.thermocline2
+        cost += self.rswt_penalty_for_transition(state, next_state, action, time_step)
 
-                if next_state.top_temp == temp_below_top_now:
-                    num_layers_used = max(0, num_layers_available - next_state.thermocline1)
-                    swt = (state.top_temp*state.thermocline1 + temp_below_top_now*num_layers_used)/(state.thermocline1 + num_layers_used)
-                elif next_state.top_temp < temp_below_top_now:
-                    swt = (state.top_temp + temp_below_top_now + next_state.top_temp)/3
-                else:
-                    swt = next_state.top_temp
-
-            cost += self.rswt_penalty(time_step, swt, rswt)
-
-        # Plan stability penalty
-        cost += self.stability_penalty(time_step, hp_kwh_el)
+        if action.e1_heat_to_store_kwh == 0.0:
+            cost += self.stability_penalty(time_step, hp_kwh_el)
 
         return cost
+
+    def rswt_penalty_for_transition(
+        self,
+        state: HeatPumpWaterTankState,
+        next_state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> float:
+        load = self.params.load_kwh[time_step]
+        rswt = self.params.rswt_f[time_step]
+        if load <= 0:
+            return 0.0
+        if action.hp_heat_to_store_kwh >= 0 and action.e1_heat_to_store_kwh == 0.0:
+            return 0.0
+        if state.top_temp >= rswt and next_state.top_temp >= rswt:
+            return 0.0
+
+        if state.top_temp == next_state.top_temp:
+            swt = state.top_temp
+        else:
+            if state.thermocline2 > state.thermocline1:
+                temp_below_top_now = state.middle_temp
+                num_layers_available = state.thermocline2 - state.thermocline1
+            else:
+                temp_below_top_now = state.bottom_temp
+                num_layers_available = self.params.num_layers - state.thermocline2
+
+            if next_state.top_temp == temp_below_top_now:
+                num_layers_used = max(0, num_layers_available - next_state.thermocline1)
+                swt = (state.top_temp*state.thermocline1 + temp_below_top_now*num_layers_used)/(state.thermocline1 + num_layers_used)
+            elif next_state.top_temp < temp_below_top_now:
+                swt = (state.top_temp + temp_below_top_now + next_state.top_temp)/3
+            else:
+                swt = next_state.top_temp
+
+        return self.rswt_penalty(time_step, swt, rswt)
 
     def _compute_difference_with_plans(self):
         current_node_energy = HeatPumpWaterTankState.build(

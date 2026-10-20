@@ -36,6 +36,7 @@ class HeatPumpWaterTankParams(Params):
     # Action range (storage change)
     hp_max_kw_th: float = 25
     max_load_kw_th: float = 20
+    tank1_elements_kw: float = 9.0
 
     # RSWT penalty
     rswt_penalty_enabled: bool = True
