@@ -21,16 +21,16 @@ class HeatPumpWaterTankParams(Params):
     hp_min_kw_th_other_steps: float = 10
     hp_turn_on_minutes: int = 12
     hp_constant_lift_f: float = 20
-    cop_intercept: float = 1.02
-    cop_oat_coeff: float = 0.0257
+    cop_intercept: float = 1.5
+    cop_oat_coeff: float = 0.015
     cop_lwt_coeff: float = 0
-    cop_min: float = 1.4
-    cop_min_oat_f: float = 15
+    cop_min: float = 1.5
+    cop_min_oat_f: float = 0
 
     # Distribution system: RWT vs SWT per load bucket ([0, u0), [u0, u1), …, [last, inf) kWh)
     load_bucket_upper_kwh: list[float] = [2.0, 4.0, 6.0, 8.0]
-    rwt_intercept_by_bucket: list[float] = [44.5, 44.5, 44.5, 44.5, 44.5]
-    rwt_slope_by_bucket: list[float] = [0.4684, 0.4684, 0.4684, 0.4684, 0.4684]
+    rwt_intercept_by_bucket: list[float] = [39.33, 39.91, 70.83, 68.94, 74.36]
+    rwt_slope_by_bucket: list[float] = [0.50, 0.48, 0.27, 0.32, 0.31]
     rwt_min: float = 50
 
     # Action range (storage change)
