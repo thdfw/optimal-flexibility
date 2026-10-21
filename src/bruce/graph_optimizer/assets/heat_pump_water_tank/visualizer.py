@@ -94,7 +94,7 @@ def plot_graph_results(
             sp_rswt_penalty.append(
                 asset.rswt_penalty_for_transition(node.state, edge.head.state, edge.action, t)
             )
-            if edge.action.e1_heat_to_store_kwh == 0.0:
+            if edge.action.heat_source == "hp":
                 sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
             else:
                 sp_stability_penalty.append(0.0)

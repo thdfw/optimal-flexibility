@@ -19,10 +19,10 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, transition_variant: int = 0) -> HeatPumpWaterTankState:
         self._load_bucket = transition_variant
-        if action.e1_heat_to_store_kwh != 0.0:
-            return self.heat_tank1_elements(state, action.e1_heat_to_store_kwh)
+        if action.heat_source == "elements1":
+            return self.heat_tank1_elements(state, action.net_heat_to_store_kwh)
 
-        store_heat_in = action.hp_heat_to_store_kwh
+        store_heat_in = action.net_heat_to_store_kwh
         if store_heat_in > 0:
             self.logger.debug(f"Charge {state} by {store_heat_in} kWh")
             next_state = self.charge(state, store_heat_in)
@@ -53,7 +53,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         )
 
     def heat_tank1_elements(
-        self, state: HeatPumpWaterTankState, e1_heat_to_store_kwh: float
+        self, state: HeatPumpWaterTankState, net_heat_to_store_kwh: float
     ) -> HeatPumpWaterTankState:
         dt_hours = 1.0
         if any(dt != dt_hours for dt in self.params.timestep_duration_hours):
@@ -63,12 +63,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         gross_kwh = self.params.tank1_elements_kw * dt_hours
         losses = self._storage_losses_kwh(state, dt_hours)
-        load_kwh = gross_kwh - e1_heat_to_store_kwh - losses
+        load_kwh = gross_kwh - net_heat_to_store_kwh - losses
 
         self.logger.debug(
             "Tank1 elements on: net to storage %s kWh, gross %s kWh, "
             "losses %s kWh, inferred load %s kWh",
-            round(e1_heat_to_store_kwh, 2),
+            round(net_heat_to_store_kwh, 2),
             round(gross_kwh, 2),
             round(losses, 2),
             round(load_kwh, 2),

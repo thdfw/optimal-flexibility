@@ -38,6 +38,9 @@ class HeatPumpWaterTankParams(Params):
     max_load_kw_th: float = 20
     tank1_elements_kw: float = 9.0
 
+    # Tank-1 elements are allowed to run when house load exceeds this threshold.
+    elements_min_house_load_kwh: float = 4.0
+
     # RSWT penalty
     rswt_penalty_enabled: bool = True
     rswt_penalty_weight: float = 0.3
@@ -84,6 +87,8 @@ class HeatPumpWaterTankParams(Params):
             raise ValueError("load_bucket_upper_kwh must be strictly increasing")
         if any(u <= 0 for u in self.load_bucket_upper_kwh):
             raise ValueError("load_bucket_upper_kwh entries must be positive")
+        if self.elements_min_house_load_kwh < 0:
+            raise ValueError("elements_min_house_load_kwh must be non-negative")
         return self
 
     def delta_T(self, swt: float) -> float:

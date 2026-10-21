@@ -112,7 +112,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         max_load_kwh = self.params.max_load_kw_th * max_dt
         max_hp_kwh = self.params.hp_max_kw_th * max_dt
         max_tank1_net_kwh = self.params.tank1_elements_kw * max_dt
-        self._hp_heat_to_store_discretized = [
+        self._hp_net_discretized = [
             x / 10
             for x in range(
                 -int(max_load_kwh * 10),
@@ -120,28 +120,30 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             )
         ]
         min_e1_net_kwh = max_tank1_net_kwh - max_load_kwh
-        self._e1_heat_to_store_discretized = [
-            x / 10
+        max_e1_net_at_min_house_load = max_tank1_net_kwh - self.params.elements_min_house_load_kwh
+        self._elements1_net_discretized = [
+            net
             for x in range(
                 int(min_e1_net_kwh * 10),
                 int(max_tank1_net_kwh * 10) + 1,
             )
-            if x != 0
+            for net in [x / 10]
+            if net <= 0 or net <= max_e1_net_at_min_house_load
         ]
-        self._hp_heat_to_store_discretized_array = np.array(self._hp_heat_to_store_discretized)
-        self._e1_heat_to_store_discretized_array = np.array(self._e1_heat_to_store_discretized)
+        self._hp_net_discretized_array = np.array(self._hp_net_discretized)
+        self._elements1_net_discretized_array = np.array(self._elements1_net_discretized)
 
         actions: list[HeatPumpWaterTankAction] = []
-        self._action_by_hp_heat_to_store_kwh = {}
-        for heat in self._hp_heat_to_store_discretized:
-            action = HeatPumpWaterTankAction(hp_heat_to_store_kwh=heat, index=len(actions))
-            self._action_by_hp_heat_to_store_kwh[heat] = action
+        self._action_by_hp_net_kwh = {}
+        for net in self._hp_net_discretized:
+            action = HeatPumpWaterTankAction(net_heat_to_store_kwh=net, heat_source="hp", index=len(actions))
+            self._action_by_hp_net_kwh[net] = action
             actions.append(action)
 
-        self._action_by_e1_heat_to_store_kwh = {}
-        for net_kwh in self._e1_heat_to_store_discretized:
-            action = HeatPumpWaterTankAction(e1_heat_to_store_kwh=net_kwh, index=len(actions))
-            self._action_by_e1_heat_to_store_kwh[net_kwh] = action
+        self._action_by_elements1_net_kwh = {}
+        for net in self._elements1_net_discretized:
+            action = HeatPumpWaterTankAction(net_heat_to_store_kwh=net, heat_source="elements1", index=len(actions))
+            self._action_by_elements1_net_kwh[net] = action
             actions.append(action)
 
         return actions
@@ -184,25 +186,25 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 actions: list[HeatPumpWaterTankAction] = []
                 seen: set[HeatPumpWaterTankAction] = set()
                 for heat_to_store_desired in heat_to_store_options:
-                    idx = int(np.abs(self._hp_heat_to_store_discretized_array - heat_to_store_desired).argmin())
-                    heat = float(self._hp_heat_to_store_discretized_array[idx])
-                    action = self._action_by_hp_heat_to_store_kwh[heat]
+                    idx = int(np.abs(self._hp_net_discretized_array - heat_to_store_desired).argmin())
+                    heat = float(self._hp_net_discretized_array[idx])
+                    action = self._action_by_hp_net_kwh[heat]
                     if action not in seen:
                         seen.add(action)
                         actions.append(action)
 
-                if dt == 1.0:
+                if dt == 1.0 and load > self.params.elements_min_house_load_kwh:
                     e1_net_desired = (
                         self.params.tank1_elements_kw * dt - load - losses
                     )
                     idx = int(
                         np.abs(
-                            self._e1_heat_to_store_discretized_array - e1_net_desired
+                            self._elements1_net_discretized_array - e1_net_desired
                         ).argmin()
                     )
-                    e1_net = float(self._e1_heat_to_store_discretized_array[idx])
-                    tank1_action = self._action_by_e1_heat_to_store_kwh[e1_net]
-                    if tank1_action not in seen:
+                    e1_net = float(self._elements1_net_discretized_array[idx])
+                    tank1_action = self._action_by_elements1_net_kwh.get(e1_net)
+                    if tank1_action is not None and tank1_action not in seen:
                         seen.add(tank1_action)
                         actions.append(tank1_action)
 
@@ -219,20 +221,18 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         action: HeatPumpWaterTankAction,
         time_step: int,
     ) -> bool:
-        if action.hp_heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
-            return False
-        if action.e1_heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
+        if action.net_heat_to_store_kwh > 0 and next_state.energy > self.max_state_energy:
             return False
         return True
 
     def elec_used_kwh(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> float:
         dt = self.params.timestep_duration_hours[time_step]
-        if action.e1_heat_to_store_kwh != 0.0:
+        if action.heat_source == "elements1":
             return self.params.tank1_elements_kw * dt
         load = self.params.load_kwh[time_step]
         losses = self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
         cop = self.params.COP(self.params.oat_f[time_step])
-        heat_from_hp = max(0.0, load + losses + action.hp_heat_to_store_kwh)
+        heat_from_hp = max(0.0, load + losses + action.net_heat_to_store_kwh)
         return heat_from_hp / cop
 
     def initial_state(self) -> HeatPumpWaterTankState:
@@ -252,11 +252,23 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def transition_matrix_variant_count(self) -> int:
         return len(self.params.load_bucket_upper_kwh) + 1
 
-    def action_uses_transition_variants(self, action: HeatPumpWaterTankAction) -> bool:
-        return action.hp_heat_to_store_kwh < -0.5
+    def transition_variants_to_precompute(self, action: HeatPumpWaterTankAction) -> tuple[int, ...]:
+        n_buckets = self.transition_matrix_variant_count()
+        all_buckets = tuple(range(n_buckets))
+        if action.heat_source == "hp" and action.net_heat_to_store_kwh < 0:
+            return all_buckets
+        if action.heat_source == "elements1":
+            uppers = self.params.load_bucket_upper_kwh
+            min_load = self.params.elements_min_house_load_kwh
+            return tuple(
+                b
+                for b in all_buckets
+                if (uppers[b] if b < len(uppers) else float("inf")) > min_load
+            )
+        return (0,)
 
     def transition_variant(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> int:
-        if not self.action_uses_transition_variants(action):
+        if action.heat_source == "hp" and action.net_heat_to_store_kwh >= 0:
             return 0
         load = max(0.0, self.params.load_kwh[time_step])
         for i, upper in enumerate(self.params.load_bucket_upper_kwh):
@@ -322,7 +334,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         cost += self.rswt_penalty_for_transition(state, next_state, action, time_step)
 
-        if action.e1_heat_to_store_kwh == 0.0:
+        if action.heat_source == "hp":
             cost += self.stability_penalty(time_step, hp_kwh_el)
 
         return cost
@@ -338,7 +350,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         rswt = self.params.rswt_f[time_step]
         if load <= 0:
             return 0.0
-        if action.hp_heat_to_store_kwh >= 0 and action.e1_heat_to_store_kwh == 0.0:
+        if action.heat_source == "hp" and action.net_heat_to_store_kwh >= 0:
             return 0.0
         if state.top_temp >= rswt and next_state.top_temp >= rswt:
             return 0.0
