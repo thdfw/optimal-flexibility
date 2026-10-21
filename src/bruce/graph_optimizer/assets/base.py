@@ -152,12 +152,15 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     def transition_matrix_variant_count(self) -> int:
+        """Width of the transition matrix variant axis (max index + 1). Default: no variants."""
         return 1
 
-    def action_uses_transition_variants(self, action: A) -> bool:
-        return False
+    def transition_variants_to_precompute(self, action: A) -> tuple[int, ...]:
+        """Variant indices to simulate when building this action's transition matrix row."""
+        return (0,)
 
     def transition_variant(self, state: S, action: A, time_step: int) -> int:
+        """Variant index for a graph edge; must be in ``[0, transition_matrix_variant_count())``."""
         return 0
 
     def closest_state(self, state: S) -> S:

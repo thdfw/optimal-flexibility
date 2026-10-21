@@ -49,12 +49,8 @@ def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, 
         st = time.time()
         logger.info(f"Computing all transitions for action: {action}")
         action_i = action.index
-        variant_range = (
-            range(n_variants)
-            if asset.action_uses_transition_variants(action)
-            else range(1)
-        )
-        for variant in variant_range:
+        variants = asset.transition_variants_to_precompute(action)
+        for variant in variants:
             for state in asset.state_space:
                 next_state = asset.next_state(state, action, transition_variant=variant)
                 closest = asset.closest_state(next_state)
@@ -62,8 +58,11 @@ def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, 
                     matrix[action_i, state.index] = closest.index
                 else:
                     matrix[action_i, state.index, variant] = closest.index
-        if len(shape) == 3 and not asset.action_uses_transition_variants(action):
-            matrix[action_i, :, 1:] = matrix[action_i, :, :1]
+        if len(shape) == 3:
+            fill_from = variants[0] if variants else 0
+            for v in range(n_variants):
+                if v not in variants:
+                    matrix[action_i, :, v] = matrix[action_i, :, fill_from]
         logger.info(f"Done in {round(time.time() - st)} seconds")
 
     path = _transition_matrix_path(asset)
