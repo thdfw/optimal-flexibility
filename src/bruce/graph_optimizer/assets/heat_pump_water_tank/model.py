@@ -2,8 +2,9 @@ from logging import Logger, getLogger
 
 from ..base import Model
 from .action import HeatPumpWaterTankAction
+from .fv_tank import simulate_elements_step
 from .params import HeatPumpWaterTankParams
-from .state import HeatPumpWaterTankState
+from .state import HeatPumpWaterTankState, compute_energy_from_layers
 
 
 class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankAction, HeatPumpWaterTankParams]):
@@ -52,6 +53,29 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             * dt_hours
         )
 
+    def _layers_from_lumped_state(self, state: HeatPumpWaterTankState) -> list[float]:
+        n = self.params.num_layers
+        th1, th2 = state.thermocline1, state.thermocline2
+        return (
+            [state.top_temp] * th1
+            + [state.middle_temp] * (th2 - th1)
+            + [state.bottom_temp] * (n - th2)
+        )
+
+    def _probe_state_from_layers(self, layers_f: list[float]) -> HeatPumpWaterTankState:
+        n = len(layers_f)
+        energy = compute_energy_from_layers(layers_f, self.params)
+        return HeatPumpWaterTankState(
+            top_temp=layers_f[0],
+            middle_temp=layers_f[n // 2],
+            bottom_temp=layers_f[-1],
+            thermocline1=1,
+            thermocline2=n,
+            energy=energy,
+            layer_profile_f=list(layers_f),
+            index=-1,
+        )
+
     def heat_tank1_elements(
         self, state: HeatPumpWaterTankState, net_heat_to_store_kwh: float
     ) -> HeatPumpWaterTankState:
@@ -63,7 +87,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         gross_kwh = self.params.tank1_elements_kw * dt_hours
         losses = self._storage_losses_kwh(state, dt_hours)
-        load_kwh = gross_kwh - net_heat_to_store_kwh - losses
+        load_kwh = max(0.0, gross_kwh - net_heat_to_store_kwh - losses)
 
         self.logger.debug(
             "Tank1 elements on: net to storage %s kWh, gross %s kWh, "
@@ -73,7 +97,16 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             round(losses, 2),
             round(load_kwh, 2),
         )
-        return state
+
+        layers_in = self._layers_from_lumped_state(state)
+        layers_out = simulate_elements_step(
+            layers_in,
+            self.params,
+            duration_s=dt_hours * 3600,
+            load_kwh=load_kwh,
+            rwt_bucket=self._load_bucket,
+        )
+        return self._probe_state_from_layers(layers_out)
 
     def charge(self, n: HeatPumpWaterTankState, store_heat_in: float) -> HeatPumpWaterTankState:
         next_state_energy = n.energy + store_heat_in

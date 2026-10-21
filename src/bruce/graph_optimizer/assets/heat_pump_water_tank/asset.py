@@ -288,10 +288,15 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             + [state.bottom_temp] * (n - th2)
         )
 
+    def _layer_temps_for_distance(self, state: HeatPumpWaterTankState) -> list[float]:
+        if state.layer_profile_f is not None:
+            return state.layer_profile_f
+        return self._temps_by_layer(state)
+
     def state_distance(self, state1: HeatPumpWaterTankState, state2: HeatPumpWaterTankState) -> float:
-        temps_1 = self._temps_by_layer(state1)
-        temps_2 = self._temps_by_layer(state2)
-        return sum(abs(a-b) for a, b in zip(temps_1, temps_2))
+        temps_1 = self._layer_temps_for_distance(state1)
+        temps_2 = self._layer_temps_for_distance(state2)
+        return sum(abs(a - b) for a, b in zip(temps_1, temps_2))
 
     def closest_state(self, state: HeatPumpWaterTankState) -> HeatPumpWaterTankState:
         energy_window_kwh = 0.5

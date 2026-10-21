@@ -5,6 +5,14 @@ from .params import HeatPumpWaterTankParams
 from ..utils import fahrenheit_to_kelvin
 
 
+def compute_energy_from_layers(layer_temps_f: list[float], params: HeatPumpWaterTankParams) -> float:
+    m_layer_kg = params.storage_volume_gallons * 3.785 / params.num_layers
+    return sum(
+        m_layer_kg * 4.187 / 3600 * fahrenheit_to_kelvin(tf)
+        for tf in layer_temps_f
+    )
+
+
 def compute_energy(
     top_temp: float,
     middle_temp: float,
@@ -27,6 +35,7 @@ class HeatPumpWaterTankState(State):
     thermocline1: int
     thermocline2: int
     energy: float
+    layer_profile_f: list[float] | None = None
 
     def __repr__(self) -> str:
         return (
