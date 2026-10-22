@@ -134,17 +134,23 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         self._elements1_net_discretized_array = np.array(self._elements1_net_discretized)
 
         actions: list[HeatPumpWaterTankAction] = []
+        self._action_by_elements1_net_kwh = {}
+        for net in self._elements1_net_discretized:
+            action = HeatPumpWaterTankAction(
+                net_heat_to_store_kwh=net, heat_source="elements1", index=len(actions)
+            )
+            self._action_by_elements1_net_kwh[net] = action
+            actions.append(action)
+
         self._action_by_hp_net_kwh = {}
         for net in self._hp_net_discretized:
             action = HeatPumpWaterTankAction(net_heat_to_store_kwh=net, heat_source="hp", index=len(actions))
             self._action_by_hp_net_kwh[net] = action
             actions.append(action)
 
-        self._action_by_elements1_net_kwh = {}
-        for net in self._elements1_net_discretized:
-            action = HeatPumpWaterTankAction(net_heat_to_store_kwh=net, heat_source="elements1", index=len(actions))
-            self._action_by_elements1_net_kwh[net] = action
-            actions.append(action)
+        n_elements1 = len(self._action_by_elements1_net_kwh)
+        n_hp = len(self._action_by_hp_net_kwh)
+        logger.info(f"Action space: {n_elements1} elements1 actions, {n_hp} heat pump actions ({len(actions)} total)")
 
         return actions
 
