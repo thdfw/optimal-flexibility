@@ -29,8 +29,8 @@ class HeatPumpWaterTankParams(Params):
 
     # Distribution system: RWT vs SWT per load bucket ([0, u0), [u0, u1), …, [last, inf) kWh)
     load_bucket_upper_kwh: list[float] = []
-    rwt_intercept_by_bucket: list[float] = [39.33]
-    rwt_slope_by_bucket: list[float] = [0.50]
+    rwt_intercept_by_bucket: list[float] = [49.463]
+    rwt_slope_by_bucket: list[float] = [0.427]
     rwt_min: float = 50
 
     # Action range (storage change)
