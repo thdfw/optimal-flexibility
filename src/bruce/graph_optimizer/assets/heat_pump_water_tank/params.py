@@ -39,7 +39,7 @@ class HeatPumpWaterTankParams(Params):
 
     # RSWT penalty
     rswt_penalty_enabled: bool = True
-    rswt_penalty_weight: float = 0.3
+    rswt_penalty_weight: float = 0.01
     rswt_penalty_decay: float = 0.9
     rswt_penalty_exponent_rate: float = 0.15
     rswt_penalty_decay_max_hour: int = 12
@@ -54,6 +54,10 @@ class HeatPumpWaterTankParams(Params):
     previous_plan_hp_kwh_el_list: list[float] | None = None
     previous_estimate_storage_kwh_now: float | None = None
     previous_estimate_elec_price_mwh_now: float | None = None
+
+    # Terminal cost
+    terminal_cost_enabled: bool = True
+    terminal_cost_end_window_hours: int = 24
 
     # Initial state
     hp_currently_on: bool = True

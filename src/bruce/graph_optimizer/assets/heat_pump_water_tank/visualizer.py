@@ -109,6 +109,15 @@ def plot_graph_results(
     ]
     sp_time = list(range(params.horizon + 1))
 
+    terminal_node = initial_node
+    while terminal_node.next_node is not None:
+        terminal_node = terminal_node.next_node
+    terminal_cost = asset.terminal_node_cost(terminal_node.state)
+    terminal_cost_full = asset.terminal_cost_full()
+    terminal_cost_pct = (
+        100.0 * terminal_cost / terminal_cost_full if terminal_cost_full > 0 else 0.0
+    )
+
     load_kw = [
         params.load_kwh[t] / params.timestep_duration_hours[t]
         for t in range(params.horizon)
@@ -121,6 +130,7 @@ def plot_graph_results(
     penalties = [
         ("RSWT penalty", params.rswt_penalty_enabled),
         ("Stability penalty", params.stability_penalty_enabled),
+        ("Terminal cost", params.terminal_cost_enabled),
     ]
     for idx, (label, enabled) in enumerate(penalties):
         color = "green" if enabled else "red"
@@ -240,12 +250,29 @@ def plot_graph_results(
     sp_time_mid = [t + 0.5 for t in sp_time[:-1]]
     rswt_vals = sp_rswt_penalty[:-1]
     stab_vals = sp_stability_penalty[:-1]
+    terminal_vals = [0.0] * len(sp_time_mid)
+    if terminal_vals:
+        terminal_vals[-1] = terminal_cost
+    stack_rswt_stab = [r + s for r, s in zip(rswt_vals, stab_vals)]
     ax[2].bar(sp_time_mid, rswt_vals, width=0.9, color="tab:orange", alpha=0.7, label="RSWT penalty")
     ax[2].bar(sp_time_mid, stab_vals, bottom=rswt_vals, width=0.9, color="tab:purple", alpha=0.7, label="Stability penalty")
+    ax[2].bar(
+        sp_time_mid,
+        terminal_vals,
+        bottom=stack_rswt_stab,
+        width=0.9,
+        color="tab:green",
+        alpha=0.7,
+        label=f"Terminal cost ({terminal_cost_pct:.0f}% of max)",
+    )
     ax[2].set_xlabel("Time step")
     ax[2].set_ylabel("Penalty [$]")
     ax[2].legend(loc="upper right", fontsize=8)
-    max_penalty = max(max(rswt_vals, default=0), max(stab_vals, default=0))
+    max_stack = max(
+        (stack_rswt_stab[i] + terminal_vals[i] for i in range(len(terminal_vals))),
+        default=0.0,
+    )
+    max_penalty = max(max(rswt_vals, default=0), max(stab_vals, default=0), terminal_cost, max_stack)
     if max_penalty > 0:
         ax[2].set_ylim([0, max_penalty * 1.3])
 

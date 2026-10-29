@@ -193,3 +193,6 @@ class Asset(ABC, Generic[S, A, P]):
 
     def allow_transition(self, state: S, next_state: S, action: A, time_step: int) -> bool:
         return True
+
+    def terminal_node_cost(self, state: S) -> float:
+        return 0.0

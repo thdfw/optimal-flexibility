@@ -74,7 +74,7 @@ class Graph(Generic[S, A, P]):
         }
 
         for node in self.nodes[self.N]:
-            node.pathcost = 0
+            node.pathcost = self.asset.terminal_node_cost(node.state)
 
         self.nodes_by: dict[int, dict[S, Node[S]]] = {
             time_step: {node.state: node for node in self.nodes[time_step]}

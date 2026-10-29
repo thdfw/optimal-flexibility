@@ -16,8 +16,8 @@ LMP = [28.14, 28.53, 46.38, 44.84, 44.8, 32.94, 39.68, 32.07, 30.07, 27.95, 29.8
 DIST = [50.13, 50.13, 487.63, 487.63, 487.63, 487.63, 487.63, 54.98, 54.98, 54.98, 54.98, 487.63, 487.63, 487.63, 487.63, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 487.63, 487.63, 487.63, 487.63, 487.63, 54.98, 54.98, 54.98, 54.98, 487.63, 487.63, 487.63, 487.63, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13, 50.13]
 input_data = {
     'elec_price_mwh': [lmp+dist for lmp, dist in zip(LMP, DIST)],
-    'rswt_f': [140]*len(LMP),
-    'load_kwh': [5]*len(LMP),
+    'rswt_f': [120]*len(LMP),
+    'load_kwh': [4]*len(LMP),
     'oat_f': [30]*len(LMP)
 }
 df = pd.DataFrame(input_data)
@@ -44,6 +44,6 @@ graph = Graph(asset)
 graph.find_shortest_path()
 plot_graph_results(graph)
 
-forecast_price = params.elec_price_mwh[0]
-pq_pairs = graph.generate_bid(forecast_price_mwh=forecast_price)
+# forecast_price = params.elec_price_mwh[0]
+# pq_pairs = graph.generate_bid(forecast_price_mwh=forecast_price)
 # plot_bid(pq_pairs, forecast_price)

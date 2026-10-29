@@ -228,6 +228,53 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def next_state(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, transition_variant: int = 0,) -> HeatPumpWaterTankState:
         return self.model.next_state(state, action, transition_variant=transition_variant)
 
+    def usable_energy_kwh(self, state: HeatPumpWaterTankState, rswt: float) -> float:
+        total = 0
+        for temp in self._temps_by_layer(state):
+            if temp <= rswt:
+                break
+            total += (
+                self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9 
+                * (temp - rswt)
+            )
+        return total
+
+    def max_usable_energy_kwh(self, rswt: float) -> float:
+        full = HeatPumpWaterTankState.build(
+            self.params.max_tank_temp_f,
+            self.params.max_tank_temp_f,
+            self.params.max_tank_temp_f,
+            self.params.num_layers,
+            self.params.num_layers,
+            self.params,
+        )
+        return self.usable_energy_kwh(full, rswt)
+
+    def _terminal_end_window_stats(self) -> tuple[float, float]:
+        window = self.params.terminal_cost_end_window_hours
+        h = self.params.horizon
+        start = max(0, h - window)
+        prices_kwh = [p / 1000 for p in self.params.elec_price_mwh[start:h]]
+        p_bar = sum(prices_kwh) / len(prices_kwh)
+        cops = [self.params.COP(self.params.oat_f[t]) for t in range(start, h)]
+        cop_bar = sum(cops) / len(cops)
+        return p_bar, cop_bar
+
+    def terminal_node_cost(self, state: HeatPumpWaterTankState | None = None) -> float:
+        if not self.params.terminal_cost_enabled:
+            return 0.0
+        rswt = self.params.rswt_f[self.params.horizon - 1]
+        p_bar, cop_bar = self._terminal_end_window_stats()
+        e_max = self.max_usable_energy_kwh(rswt)
+        if state is None:
+            usable_gap = e_max
+        else:
+            usable_gap = max(0.0, e_max - self.usable_energy_kwh(state, rswt))
+        return p_bar / cop_bar * usable_gap
+
+    def terminal_cost_full(self) -> float:
+        return self.terminal_node_cost(None)
+
     def _temps_by_layer(self, state: HeatPumpWaterTankState) -> list[float]:
         n = self.params.num_layers
         th1, th2 = state.thermocline1, state.thermocline2
