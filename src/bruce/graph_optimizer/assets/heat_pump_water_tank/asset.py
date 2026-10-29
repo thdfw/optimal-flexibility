@@ -23,13 +23,27 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def __init__(self, params: HeatPumpWaterTankParams):
         super().__init__(params)
+        self._horizon_avg_elec_price_kwh = self._horizon_average_elec_price_kwh()
         self._compute_difference_with_plans()
         self._available_actions_cache: list[dict[float, tuple[HeatPumpWaterTankAction, ...]]] = []
         self._build_available_actions_cache()
 
     def on_params_updated(self) -> None:
+        self._horizon_avg_elec_price_kwh = self._horizon_average_elec_price_kwh()
         self._compute_difference_with_plans()
         self._build_available_actions_cache()
+
+    def _horizon_average_elec_price_kwh(self) -> float:
+        """Average electricity price over the planning horizon ($/kWh), weighted by step duration."""
+        dts = self.params.timestep_duration_hours
+        total_hours = sum(dts)
+        if total_hours <= 0:
+            return 0.0
+        weighted = sum(
+            (price_mwh / 1000) * dt
+            for price_mwh, dt in zip(self.params.elec_price_mwh, dts, strict=True)
+        )
+        return weighted / total_hours
 
     @property
     def name(self) -> str:
@@ -393,7 +407,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         weight = self.params.stability_penalty_weight
         decay = self.params.stability_penalty_decay
-        return weight * decay**elapsed_hours * abs(hp_kwh_el - previous_plan_for_this_time_step)
+        return (
+            self._horizon_avg_elec_price_kwh
+            * weight
+            * decay**elapsed_hours
+            * abs(hp_kwh_el - previous_plan_for_this_time_step)
+        )
 
     def rswt_penalty(
         self,
@@ -424,7 +443,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             fraction * layer_gallons * max(0.0, math.exp(exponent_rate * (rswt - temp)) - 1)
             for temp, fraction in drawn_layers
         )
-        return decay**(max_hour - min(elapsed_hours, max_hour)) * weight * shortfall
+        return (
+            self._horizon_avg_elec_price_kwh
+            * decay ** (max_hour - min(elapsed_hours, max_hour))
+            * weight
+            * shortfall
+        )
 
     def layers_drawn(
         self,
