@@ -79,8 +79,8 @@ $$
 where:
 
 - $s$ is the tank state of the node
-- $E(s)$ is the usable energy in state $s$, i.e. the heat the storage can deliver to the house with water at or above RSWT (in kWh)
-- $E^{\max}$ is the usable energy of a full storage (in kWh)
+- $E(s)$ is the usable energy in state $s$ (in kWh), approximated by walking layers from the top down and summing energy relative to RSWT in each layer
+- $E^{\max}$ is the same sum for a full storage at max temperature
 - $\bar{p}_{\text{end}}$ is the average electricity price over the last 24 hours of the horizon (in $/kWh), used as a proxy for the prices just after the horizon
 - $\overline{\text{COP}}_{\text{end}}$ is the average heat pump COP over the same 24 hours
 
