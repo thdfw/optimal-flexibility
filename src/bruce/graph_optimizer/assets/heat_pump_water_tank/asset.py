@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -276,33 +277,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     ) -> float:
 
         elec_price_kwh = self.params.elec_price_mwh[time_step] / 1000
-        rswt = self.params.rswt_f[time_step]
-        load = self.params.load_kwh[time_step]
 
         hp_kwh_el = self.elec_used_kwh(state, action, time_step)
         cost = elec_price_kwh * hp_kwh_el
 
         # RSWT penalty
-        if action.heat_to_store_kwh<0 and load>0 and (state.top_temp<rswt or next_state.top_temp<rswt):
-            if state.top_temp == next_state.top_temp:
-                swt = state.top_temp
-            else:
-                if state.thermocline2 > state.thermocline1:
-                    temp_below_top_now = state.middle_temp
-                    num_layers_available = state.thermocline2 - state.thermocline1
-                else:
-                    temp_below_top_now = state.bottom_temp
-                    num_layers_available = self.params.num_layers - state.thermocline2
-
-                if next_state.top_temp == temp_below_top_now:
-                    num_layers_used = max(0, num_layers_available - next_state.thermocline1)
-                    swt = (state.top_temp*state.thermocline1 + temp_below_top_now*num_layers_used)/(state.thermocline1 + num_layers_used)
-                elif next_state.top_temp < temp_below_top_now:
-                    swt = (state.top_temp + temp_below_top_now + next_state.top_temp)/3
-                else:
-                    swt = next_state.top_temp
-
-            cost += self.rswt_penalty(time_step, swt, rswt)
+        cost += self.rswt_penalty(state, next_state, action, time_step)
 
         # Plan stability penalty
         cost += self.stability_penalty(time_step, hp_kwh_el)
@@ -368,15 +348,64 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         decay = self.params.stability_penalty_decay
         return weight * decay**elapsed_hours * abs(hp_kwh_el - previous_plan_for_this_time_step)
 
-    def rswt_penalty(self, time_step: int, swt: float, rswt: float) -> float:
+    def rswt_penalty(
+        self,
+        state: HeatPumpWaterTankState,
+        next_state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> float:
         if not self.params.rswt_penalty_enabled:
             return 0
-        if swt>=rswt:
+        rswt = self.params.rswt_f[time_step]
+        if action.heat_to_store_kwh >= 0 or self.params.load_kwh[time_step] <= 0:
             return 0
+        if state.top_temp >= rswt and next_state.top_temp >= rswt:
+            return 0
+
+        load_bucket = self.transition_variant(state, action, time_step)
+        drawn_layers = self.layers_drawn(state, -action.heat_to_store_kwh, load_bucket)
+
         exponent_rate = self.params.rswt_penalty_exponent_rate
         weight = self.params.rswt_penalty_weight
         decay = self.params.rswt_penalty_decay
         max_hour = self.params.rswt_penalty_decay_max_hour
         elapsed_hours = sum(self.params.timestep_duration_hours[:time_step])
-        penalty = decay**(max_hour - min(elapsed_hours, max_hour)) * weight * np.exp(exponent_rate*(rswt-swt))
-        return penalty
+        layer_gallons = self.params.storage_volume_gallons / self.params.num_layers
+
+        shortfall = sum(
+            fraction * layer_gallons * max(0.0, math.exp(exponent_rate * (rswt - temp)) - 1)
+            for temp, fraction in drawn_layers
+        )
+        return decay**(max_hour - min(elapsed_hours, max_hour)) * weight * shortfall
+
+    def layers_drawn(
+        self,
+        state: HeatPumpWaterTankState,
+        energy_kwh: float,
+        load_bucket: int = 0,
+    ) -> list[tuple[float, float]]:
+        """Temperature and (fractional) number of layers drawn from the top of the storage to supply energy_kwh.
+
+        Each layer drawn is returned to the bottom at RWT, so once all original layers have been drawn,
+        the returned water is drawn next, in the order it came back.
+        """
+        layer_kwh_per_f = self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
+        layers = self._temps_by_layer(state)
+        drawn: list[tuple[float, float]] = []
+        remaining_kwh = energy_kwh
+        while remaining_kwh > 1e-9:
+            returned: list[float] = []
+            for temp in layers:
+                rwt = self.params.rwt(temp, load_bucket)
+                layer_kwh = layer_kwh_per_f * (temp - rwt)
+                if layer_kwh <= 0:
+                    return drawn
+                fraction = min(1.0, remaining_kwh / layer_kwh)
+                drawn.append((temp, fraction))
+                remaining_kwh -= fraction * layer_kwh
+                if remaining_kwh <= 1e-9:
+                    return drawn
+                returned.append(rwt)
+            layers = returned
+        return drawn

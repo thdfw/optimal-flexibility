@@ -43,42 +43,6 @@ def _hp_heat_out_kwh(
     return asset.elec_used_kwh(state, action, time_step) * cop
 
 
-def _rswt_penalty_for_edge(
-    asset: HeatPumpWaterTankAsset,
-    state: HeatPumpWaterTankState,
-    next_state: HeatPumpWaterTankState,
-    action: HeatPumpWaterTankAction,
-    time_step: int,
-) -> float:
-    load = asset.params.load_kwh[time_step]
-    rswt = asset.params.rswt_f[time_step]
-    if action.heat_to_store_kwh >= 0 or load <= 0:
-        return 0.0
-    if state.top_temp >= rswt and next_state.top_temp >= rswt:
-        return 0.0
-
-    if state.top_temp == next_state.top_temp:
-        swt = state.top_temp
-    else:
-        if state.thermocline2 > state.thermocline1:
-            temp_below_top = state.middle_temp
-            num_layers_available = state.thermocline2 - state.thermocline1
-        else:
-            temp_below_top = state.bottom_temp
-            num_layers_available = asset.params.num_layers - state.thermocline2
-        if next_state.top_temp == temp_below_top:
-            num_layers_used = max(0, num_layers_available - next_state.thermocline1)
-            swt = (state.top_temp * state.thermocline1 + temp_below_top * num_layers_used) / (
-                state.thermocline1 + num_layers_used
-            )
-        elif next_state.top_temp < temp_below_top:
-            swt = (state.top_temp + temp_below_top + next_state.top_temp) / 3
-        else:
-            swt = next_state.top_temp
-
-    return asset.rswt_penalty(time_step, swt, rswt)
-
-
 def plot_graph_results(
     graph: HpGraph,
     *,
@@ -127,9 +91,7 @@ def plot_graph_results(
             cop = params.COP(params.oat_f[t])
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
-            sp_rswt_penalty.append(
-                _rswt_penalty_for_edge(asset, node.state, edge.head.state, edge.action, t)
-            )
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, edge.head.state, edge.action, t))
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
 
         st = node.state
