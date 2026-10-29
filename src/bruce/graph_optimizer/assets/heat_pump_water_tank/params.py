@@ -9,8 +9,8 @@ class HeatPumpWaterTankParams(Params):
     horizon: int = 48
     
     # Storage
-    num_layers: int = 27
-    storage_volume_gallons: float = 360
+    num_layers: int = 9
+    storage_volume_gallons: float = 120
     storage_losses_percent: float = 0.5
     max_tank_temp_f: float = 160
 
@@ -60,8 +60,8 @@ class HeatPumpWaterTankParams(Params):
     initial_top_temp: float = 160
     initial_middle_temp: float = 160
     initial_bottom_temp: float = 100
-    initial_thermocline1: int = 27
-    initial_thermocline2: int = 27
+    initial_thermocline1: int = 9
+    initial_thermocline2: int = 9
 
     # Forecasts
     rswt_f: list[float]
@@ -83,6 +83,21 @@ class HeatPumpWaterTankParams(Params):
             raise ValueError("load_bucket_upper_kwh must be strictly increasing")
         if any(u <= 0 for u in self.load_bucket_upper_kwh):
             raise ValueError("load_bucket_upper_kwh entries must be positive")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_initial_thermoclines(self) -> Self:
+        th1 = self.initial_thermocline1
+        th2 = self.initial_thermocline2
+        n = self.num_layers
+        if n < 1:
+            raise ValueError("num_layers must be at least 1")
+        if not (1 <= th1 <= n):
+            raise ValueError(f"initial_thermocline1 must be in [1, num_layers] ([1, {n}]), got {th1}")
+        if not (1 <= th2 <= n):
+            raise ValueError(f"initial_thermocline2 must be in [1, num_layers] ([1, {n}]), got {th2}")
+        if th2 < th1:
+            raise ValueError(f"initial_thermocline2 ({th2}) must be >= initial_thermocline1 ({th1})")
         return self
 
     def delta_T(self, swt: float) -> float:
