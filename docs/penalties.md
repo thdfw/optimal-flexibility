@@ -15,12 +15,12 @@ A path the model would label as "below RSWT" may therefore be perfectly acceptab
 For each edge during which the storage is discharging and the top layer is below RSWT at the start or end of the time step, we apply the following cost penalty:
 
 $$
-\text{rswt-penalty}_t = \alpha \cdot \bar{p} \cdot \lambda^{\,H - \min(t,\, H)} \cdot \sum_i V_i \cdot \max\left(0,\; e^{\,k\,(\text{RSWT}_t - T_i)} - 1\right)
+\text{rswt-penalty}_t = \omega \cdot \bar{p} \cdot \lambda^{\,H - \min(t,\, H)} \cdot \sum_i V_i \cdot \max\left(0,\; e^{\,k\,(\text{RSWT}_t - T_i)} - 1\right)
 $$
 
 where:
 
-- $\alpha$ is the penalty weight (in kWh of electricity per gallon)
+- $\omega$ is the penalty weight (in kWh of electricity per gallon)
 - $\bar{p}$ is the average electricity price over the planning horizon (in $/kWh)
 - $\lambda$ is the decay factor
 - $H$ is the hour after which the penalty reaches its full weight
@@ -32,7 +32,7 @@ where:
 
 Scaling the penalty by $\bar{p}$ allows us to use the same weights across different price levels (which can change depending on the location and time of year).
 
-The parameters to tune are $\alpha, \lambda, H, k$.
+The parameters to tune are $\omega, \lambda, H, k$.
 
 # Stability penalty
 
@@ -49,12 +49,12 @@ For a strategy that combines both robustness against noise and flexibility in fa
 If the currently stored energy is within $\Delta E_{\max}$ of what the previous plan predicted for the current time, and the electricity price forecast for the current hour is within $\Delta p_{\max}$ of the previous forecast, we apply the following cost penalty to each edge that starts within the first $H$ hours of the horizon:
 
 $$
-\text{stability-penalty}_t = \beta \cdot \bar{p} \cdot \lambda^{\,t} \cdot \left| e_t - \hat{e}_t \right|
+\text{stability-penalty}_t = \omega \cdot \bar{p} \cdot \lambda^{\,t} \cdot \left| e_t - \hat{e}_t \right|
 $$
 
 where:
 
-- $\beta$ is the penalty weight (dimensionless)
+- $\omega$ is the penalty weight (dimensionless)
 - $\bar{p}$ is the average electricity price over the planning horizon (in $/kWh)
 - $\lambda$ is the decay factor
 - $t$ is the number of hours between the start of the horizon and the start of the time step
@@ -64,7 +64,7 @@ where:
 
 As for the RSWT penalty, scaling by $\bar{p}$ keeps the penalty's strength the same relative to the cost savings that would justify a plan change, whatever the price level.
 
-The parameters to tune are $\beta, \lambda, H, \Delta E_{\max}, \Delta p_{\max}$.
+The parameters to tune are $\omega, \lambda, H, \Delta E_{\max}, \Delta p_{\max}$.
 
 # Terminal cost
 
@@ -88,7 +88,7 @@ This does not force the storage to be full at the end of the horizon. If electri
 
 There are no weights to tune; the only choice is the window used to compute $\bar{p}_{\text{end}}$ and $\overline{\text{COP}}_{\text{end}}$.
 
-# OPTIONAL - IF DEEMED NECESSARY: Adding thermal mass
+# OPTIONAL (not for now): Adding thermal mass
 
 Because the house has a thermal mass, allowing the FLO to use some water below RSWT will not immediately result in breaking the SLA (the house dropping below setpoint). This is why using some water below RSWT can be acceptable in specific conditions: when done for a short period of time (e.g. not 5 hours in a row) and the thermal mass has to be re-gained before being used again (e.g. not 1 hour below RSWT, then 1 hour exactly at RSWT, and then again one hour below RSWT).
 
