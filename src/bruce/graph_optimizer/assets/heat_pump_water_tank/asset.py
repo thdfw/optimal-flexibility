@@ -150,8 +150,8 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def _build_available_actions_cache(self) -> None:
         self._available_actions_cache = []
+        self._fill_to_full_action_by_state = {}
         for time_step in range(self.params.horizon):
-            self._fill_to_full_action_by_state = {}
             by_state_and_mode: dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
             for state in self.state_space:
                 for mode in (0, 1):
