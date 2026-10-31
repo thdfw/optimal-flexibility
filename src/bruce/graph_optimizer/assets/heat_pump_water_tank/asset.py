@@ -151,6 +151,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def _build_available_actions_cache(self) -> None:
         self._available_actions_cache = []
         for time_step in range(self.params.horizon):
+            self._fill_to_full_action_by_state = {}
             by_state_and_mode: dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
             for state in self.state_space:
                 for mode in (0, 1):
@@ -168,6 +169,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         load = self.params.load_kwh[time_step]
         losses = self.params.storage_losses_percent / 100 * (energy - self.min_state_energy) * dt
         max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode)
+        min_short_cycle_heat = (
+            self.params.hp_min_kw_elec * dt * self.params.COP(self.params.oat_f[time_step])
+            if mode == 0 and self.params.hp_min_kw_elec > 0
+            else 0.0
+        )
 
         heat_to_store_for_full = self.max_state_energy - energy
         hp_heat_out_for_full = heat_to_store_for_full + load + losses
@@ -177,7 +183,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         fill_to_full = False
         if hp_heat_out_for_full >= max_hp_heat_out:
             hp_heat_out_levels.append((max_hp_heat_out, 1))
-        elif heat_to_store_for_full > 0 and hp_heat_out_for_full > 0:
+        elif (
+            heat_to_store_for_full > 0
+            and hp_heat_out_for_full > 0
+            and hp_heat_out_for_full >= min_short_cycle_heat
+        ):
             fill_to_full = True
 
         actions: list[tuple[HeatPumpWaterTankAction, int]] = []
@@ -208,6 +218,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                         idx -= 1
                 self._fill_to_full_action_by_state[state.index] = fill_action
             fill_action = self._fill_to_full_action_by_state[state.index]
+            if fill_action is not None and fill_action not in seen:
+                if (
+                    min_short_cycle_heat > 0
+                    and self._hp_heat_out_kwh(state, fill_action, time_step) < min_short_cycle_heat
+                ):
+                    fill_action = None
             if fill_action is not None and fill_action not in seen:
                 seen.add(fill_action)
                 actions.append((fill_action, 0))
