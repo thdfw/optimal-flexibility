@@ -37,7 +37,7 @@ class HeatPumpWaterTankParams(Params):
 
     # RSWT penalty
     rswt_penalty_enabled: bool = True
-    rswt_penalty_weight: float = 0.01
+    rswt_penalty_weight: float = 0.02
     rswt_penalty_decay: float = 0.9
     rswt_penalty_exponent_rate: float = 0.15
     rswt_penalty_decay_max_hour: int = 12
