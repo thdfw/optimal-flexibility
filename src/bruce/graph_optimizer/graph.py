@@ -16,15 +16,16 @@ class PriceQuantityPair:
 
 
 class Node(Generic[S]):
-    def __init__(self, state: S, time_step: int):
+    def __init__(self, state: S, time_step: int, mode: int = 0):
         self.state = state
         self.time_step = time_step
+        self.mode = mode
         self.pathcost = 1e9
         self.next_node: Node[S] | None = None
         self.shortest_path_elec: list[float] = []
 
     def __repr__(self):
-        return f"[{self.time_step}]{self.state}"
+        return f"[{self.time_step}|{self.mode}]{self.state}"
 
 
 class Edge(Generic[S, A]):
@@ -67,19 +68,24 @@ class Graph(Generic[S, A, P]):
         self.transition_matrix = get_transition_matrix(self.asset)
 
     def create_nodes(self):
-        """For every time step, create a layer of nodes corresponding to all available states."""
-        self.nodes: dict[int, list[Node[S]]] = {
-            time_step: [Node(state, time_step) for state in self.asset.state_space]
-            for time_step in range(self.N + 1)
-        }
+        """For every time step, create a layer of nodes for each (state, mode) pair."""
+        modes = self.asset.get_modes()
+        self.nodes: dict[int, list[Node[S]]] = {}
+        self.nodes_by: dict[int, dict[tuple[int, int], Node[S]]] = {}
+        for time_step in range(self.N + 1):
+            layer: list[Node[S]] = []
+            by_index: dict[tuple[int, int], Node[S]] = {}
+            for mode in modes:
+                for state in self.asset.state_space:
+                    node = Node(state, time_step, mode)
+                    layer.append(node)
+                    by_index[(state.index, mode)] = node
+            self.nodes[time_step] = layer
+            self.nodes_by[time_step] = by_index
 
         for node in self.nodes[self.N]:
             node.pathcost = self.asset.terminal_node_cost(node.state)
 
-        self.nodes_by: dict[int, dict[S, Node[S]]] = {
-            time_step: {node.state: node for node in self.nodes[time_step]}
-            for time_step in range(self.N + 1)
-        }
         self.bid_nodes: list[Node[S]] = list(self.nodes[0])
 
     def create_edges(self):
@@ -93,9 +99,9 @@ class Graph(Generic[S, A, P]):
                 if time_step <= 1:
                     self.bid_edges[node] = []
 
-                available_actions = self.asset.get_available_actions(node.state, time_step)
+                available_actions = self.asset.get_available_actions(node.state, time_step, node.mode)
 
-                for action in available_actions:
+                for action, next_mode in available_actions:
                     variant = self.asset.transition_variant(node.state, action, time_step)
                     if self.transition_matrix.ndim == 2:
                         next_state_index = int(
@@ -108,8 +114,8 @@ class Graph(Generic[S, A, P]):
                     next_state = self.asset.state_space[next_state_index]
                     if not self.asset.allow_transition(node.state, next_state, action, time_step):
                         continue
-                    next_node = self.nodes[time_step+1][next_state_index]
-                    cost = self.asset.cost(node.state, next_state, action, time_step)
+                    next_node = self.nodes_by[time_step + 1][(next_state_index, next_mode)]
+                    cost = self.asset.cost(node.state, next_state, action, time_step, node.mode)
                     elec_used_kwh = self.asset.elec_used_kwh(node.state, action, time_step)
                     edge = Edge(node, next_node, cost, action, elec_used_kwh)
                     self.edges[node].append(edge)
@@ -154,13 +160,14 @@ class Graph(Generic[S, A, P]):
 
     def find_initial_node(self) -> Node[S]:
         closest = self.asset.closest_state(self.asset.initial_state())
+        mode = self.asset.initial_mode()
         nodes_by_0 = getattr(self, "nodes_by", None)
         if nodes_by_0 is not None:
-            return nodes_by_0[0][closest]
+            return nodes_by_0[0][(closest.index, mode)]
         for node in self.bid_nodes:
-            if node.state == closest:
+            if node.state == closest and node.mode == mode:
                 return node
-        raise RuntimeError(f"No step-0 node for initial state {closest}")
+        raise RuntimeError(f"No step-0 node for initial state {closest} and mode {mode}")
 
     def trim_graph_for_waiting(self) -> None:
         """Keep only nodes and edges for the first time step to generate a bid later."""

@@ -66,6 +66,7 @@ def plot_graph_results(
     sp_stored_energy: list[float] = []
     sp_rswt_penalty: list[float] = []
     sp_stability_penalty: list[float] = []
+    sp_short_cycle_penalty: list[float] = []
 
     node: Node[HeatPumpWaterTankState] | None = initial_node
     last_edge: Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction] | None = None
@@ -81,6 +82,7 @@ def plot_graph_results(
                 sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
             sp_rswt_penalty.append(0.0)
             sp_stability_penalty.append(0.0)
+            sp_short_cycle_penalty.append(0.0)
         else:
             edge = _edge_for_transition(graph, node)
             if edge is None:
@@ -93,6 +95,7 @@ def plot_graph_results(
             sp_hp_heat_out_kw.append(heat_out / dt)
             sp_rswt_penalty.append(asset.rswt_penalty(node.state, edge.head.state, edge.action, t))
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
+            sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
 
         st = node.state
         sp_top_temp.append(st.top_temp)
@@ -130,6 +133,7 @@ def plot_graph_results(
     penalties = [
         ("RSWT penalty", params.rswt_penalty_enabled),
         ("Stability penalty", params.stability_penalty_enabled),
+        ("Short-cycle penalty", params.short_cycle_penalty_enabled),
         ("Terminal cost", params.terminal_cost_enabled),
     ]
     for idx, (label, enabled) in enumerate(penalties):
@@ -250,16 +254,27 @@ def plot_graph_results(
     sp_time_mid = [t + 0.5 for t in sp_time[:-1]]
     rswt_vals = sp_rswt_penalty[:-1]
     stab_vals = sp_stability_penalty[:-1]
+    short_vals = sp_short_cycle_penalty[:-1]
     terminal_vals = [0.0] * len(sp_time_mid)
     if terminal_vals:
         terminal_vals[-1] = terminal_cost
     stack_rswt_stab = [r + s for r, s in zip(rswt_vals, stab_vals)]
+    stack_rswt_stab_short = [rs + sc for rs, sc in zip(stack_rswt_stab, short_vals)]
     ax[2].bar(sp_time_mid, rswt_vals, width=0.9, color="tab:orange", alpha=0.7, label="RSWT penalty")
     ax[2].bar(sp_time_mid, stab_vals, bottom=rswt_vals, width=0.9, color="tab:purple", alpha=0.7, label="Stability penalty")
     ax[2].bar(
         sp_time_mid,
-        terminal_vals,
+        short_vals,
         bottom=stack_rswt_stab,
+        width=0.9,
+        color="tab:cyan",
+        alpha=0.7,
+        label="Short-cycle penalty",
+    )
+    ax[2].bar(
+        sp_time_mid,
+        terminal_vals,
+        bottom=stack_rswt_stab_short,
         width=0.9,
         color="tab:green",
         alpha=0.7,
@@ -269,10 +284,16 @@ def plot_graph_results(
     ax[2].set_ylabel("Penalty [$]")
     ax[2].legend(loc="upper right", fontsize=8)
     max_stack = max(
-        (stack_rswt_stab[i] + terminal_vals[i] for i in range(len(terminal_vals))),
+        (stack_rswt_stab_short[i] + terminal_vals[i] for i in range(len(terminal_vals))),
         default=0.0,
     )
-    max_penalty = max(max(rswt_vals, default=0), max(stab_vals, default=0), terminal_cost, max_stack)
+    max_penalty = max(
+        max(rswt_vals, default=0),
+        max(stab_vals, default=0),
+        max(short_vals, default=0),
+        terminal_cost,
+        max_stack,
+    )
     if max_penalty > 0:
         ax[2].set_ylim([0, max_penalty * 1.3])
 

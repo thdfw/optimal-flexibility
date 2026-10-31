@@ -143,8 +143,14 @@ class Asset(ABC, Generic[S, A, P]):
     def get_model(self) -> Model[S, A, P]:
         raise NotImplementedError
 
+    def get_modes(self) -> list[int]:
+        return [0]
+
+    def initial_mode(self) -> int:
+        return self.get_modes()[0]
+
     @abstractmethod
-    def get_available_actions(self, state: S, time_step: int) -> list[A]:
+    def get_available_actions(self, state: S, time_step: int, mode: int = 0) -> list[tuple[A, int]]:
         raise NotImplementedError
 
     @abstractmethod
@@ -168,7 +174,7 @@ class Asset(ABC, Generic[S, A, P]):
         raise NotImplementedError
 
     @abstractmethod
-    def cost(self, state: S, next_state: S, action: A, time_step: int) -> float:
+    def cost(self, state: S, next_state: S, action: A, time_step: int, mode: int = 0) -> float:
         raise NotImplementedError
 
     @abstractmethod

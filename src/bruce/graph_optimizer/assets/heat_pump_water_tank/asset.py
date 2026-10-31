@@ -23,27 +23,35 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
     def __init__(self, params: HeatPumpWaterTankParams):
         super().__init__(params)
-        self._horizon_avg_elec_price_kwh = self._horizon_average_elec_price_kwh()
+        self._refresh_horizon_median_elec_price_kwh()
         self._compute_difference_with_plans()
-        self._available_actions_cache: list[dict[float, tuple[HeatPumpWaterTankAction, ...]]] = []
+        self._available_actions_cache: list[
+            dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]]
+        ] = []
+        self._fill_to_full_action_by_state: dict[int, HeatPumpWaterTankAction | None] = {}
         self._build_available_actions_cache()
 
     def on_params_updated(self) -> None:
-        self._horizon_avg_elec_price_kwh = self._horizon_average_elec_price_kwh()
+        self._refresh_horizon_median_elec_price_kwh()
         self._compute_difference_with_plans()
+        self._fill_to_full_action_by_state = {}
         self._build_available_actions_cache()
 
-    def _horizon_average_elec_price_kwh(self) -> float:
-        """Average electricity price over the planning horizon ($/kWh), weighted by step duration."""
-        dts = self.params.timestep_duration_hours
-        total_hours = sum(dts)
-        if total_hours <= 0:
+    @staticmethod
+    def _median_kwh(prices_kwh: list[float]) -> float:
+        if not prices_kwh:
             return 0.0
-        weighted = sum(
-            (price_mwh / 1000) * dt
-            for price_mwh, dt in zip(self.params.elec_price_mwh, dts, strict=True)
-        )
-        return weighted / total_hours
+        sorted_prices = sorted(prices_kwh)
+        n = len(sorted_prices)
+        mid = n // 2
+        if n % 2:
+            return sorted_prices[mid]
+        return (sorted_prices[mid - 1] + sorted_prices[mid]) / 2
+
+    def _refresh_horizon_median_elec_price_kwh(self) -> None:
+        """Median step electricity price over the horizon ($/kWh)."""
+        prices_kwh = [p / 1000 for p in self.params.elec_price_mwh]
+        self._horizon_median_elec_price_kwh = self._median_kwh(prices_kwh)
 
     @property
     def name(self) -> str:
@@ -141,55 +149,85 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return list(self._action_by_heat_to_store_kwh.values())
 
     def _build_available_actions_cache(self) -> None:
-        unique_energies = {state.energy for state in self.state_space}
         self._available_actions_cache = []
         for time_step in range(self.params.horizon):
-            by_energy: dict[float, tuple[HeatPumpWaterTankAction, ...]] = {}
-            for energy in unique_energies:
-                dt = self.params.timestep_duration_hours[time_step]
-                load = self.params.load_kwh[time_step]
-                losses = self.params.storage_losses_percent/100 * (energy-self.min_state_energy) * dt
-                cop = self.params.COP(self.params.oat_f[time_step])
+            by_state_and_mode: dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
+            for state in self.state_space:
+                for mode in (0, 1):
+                    by_state_and_mode[(state.index, mode)] = self._available_actions_for(state, time_step, mode)
+            self._available_actions_cache.append(by_state_and_mode)
 
-                if time_step==0:
-                    turn_on_minutes = self.params.hp_turn_on_minutes if not self.params.hp_currently_on else 0
-                else:
-                    turn_on_minutes = self.params.hp_turn_on_minutes/2
+    def _available_actions_for(
+        self,
+        state: HeatPumpWaterTankState,
+        time_step: int,
+        mode: int,
+    ) -> tuple[tuple[HeatPumpWaterTankAction, int], ...]:
+        energy = state.energy
+        dt = self.params.timestep_duration_hours[time_step]
+        load = self.params.load_kwh[time_step]
+        losses = self.params.storage_losses_percent / 100 * (energy - self.min_state_energy) * dt
+        max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode)
 
-                max_hp_elec_in = (1-min(turn_on_minutes, dt*60)/(dt*60)) * self.params.hp_max_kw_elec * dt
-                max_hp_heat_out = max_hp_elec_in * cop
+        heat_to_store_for_full = self.max_state_energy - energy
+        hp_heat_out_for_full = heat_to_store_for_full + load + losses
 
-                hp_heat_out_levels = [0]
+        # (heat out, next mode: 1 iff this step runs at full available power through its end)
+        hp_heat_out_levels: list[tuple[float, int]] = [(0.0, 0)]
+        fill_to_full = False
+        if hp_heat_out_for_full >= max_hp_heat_out:
+            hp_heat_out_levels.append((max_hp_heat_out, 1))
+        elif heat_to_store_for_full > 0 and hp_heat_out_for_full > 0:
+            fill_to_full = True
 
-                heat_to_store_for_full = self.max_state_energy - energy
-                hp_heat_out_for_full = heat_to_store_for_full + load + losses
+        actions: list[tuple[HeatPumpWaterTankAction, int]] = []
+        seen: set[HeatPumpWaterTankAction] = set()
+        for hp_heat_out, next_mode in hp_heat_out_levels:
+            heat_to_store_desired = hp_heat_out - load - losses
+            idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
+            action = self._action_by_heat_to_store_kwh[self._heat_to_store_discretized[idx]]
+            if action not in seen:
+                seen.add(action)
+                actions.append((action, next_mode))
 
-                min_charge_kwh = (self.params.hp_min_kw_th_first_step if time_step==0 else self.params.hp_min_kw_th_other_steps) * dt
+        if fill_to_full:
+            if state.index not in self._fill_to_full_action_by_state:
+                desired = self.max_state_energy - state.energy
+                fill_action: HeatPumpWaterTankAction | None = None
+                if desired > 0:
+                    idx = int(np.abs(self._heat_to_store_discretized_array - desired).argmin())
+                    while idx >= 0:
+                        heat = self._heat_to_store_discretized[idx]
+                        if heat <= 0:
+                            break
+                        candidate = self._action_by_heat_to_store_kwh[heat]
+                        successor = self.closest_state(self.next_state(state, candidate))
+                        if successor.energy <= self.max_state_energy:
+                            fill_action = candidate
+                            break
+                        idx -= 1
+                self._fill_to_full_action_by_state[state.index] = fill_action
+            fill_action = self._fill_to_full_action_by_state[state.index]
+            if fill_action is not None and fill_action not in seen:
+                seen.add(fill_action)
+                actions.append((fill_action, 0))
+        return tuple(actions)
 
-                if hp_heat_out_for_full >= max_hp_heat_out:
-                    hp_heat_out_levels += [max_hp_heat_out]
-                elif hp_heat_out_for_full > min_charge_kwh:
-                    hp_heat_out_levels += [hp_heat_out_for_full]
+    def get_modes(self) -> list[int]:
+        # 0: heat pump was off at the end of the previous step.
+        # 1: heat pump ran at this step's full available power through the previous step.
+        return [0, 1]
 
-                if time_step==0 and load>0 and self.params.hp_currently_on:
-                    hp_heat_out_levels += [load+losses]
+    def initial_mode(self) -> int:
+        return 1 if self.params.hp_currently_on else 0
 
-                heat_to_store_options = [hp_heat_out-load-losses for hp_heat_out in hp_heat_out_levels]
-                actions: list[HeatPumpWaterTankAction] = []
-                seen: set[HeatPumpWaterTankAction] = set()
-                for heat_to_store_desired in heat_to_store_options:
-                    idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
-                    heat = float(self._heat_to_store_discretized_array[idx])
-                    action = self._action_by_heat_to_store_kwh[heat]
-                    if action not in seen:
-                        seen.add(action)
-                        actions.append(action)
-
-                by_energy[energy] = tuple(actions)
-            self._available_actions_cache.append(by_energy)
-
-    def get_available_actions(self, state: HeatPumpWaterTankState, time_step: int) -> list[HeatPumpWaterTankAction]:
-        return list(self._available_actions_cache[time_step][state.energy])
+    def get_available_actions(
+        self,
+        state: HeatPumpWaterTankState,
+        time_step: int,
+        mode: int = 0,
+    ) -> list[tuple[HeatPumpWaterTankAction, int]]:
+        return list(self._available_actions_cache[time_step][(state.index, mode)])
 
     def allow_transition(
         self,
@@ -203,12 +241,26 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return True
 
     def elec_used_kwh(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> float:
+        cop = self.params.COP(self.params.oat_f[time_step])
+        return self._hp_heat_out_kwh(state, action, time_step) / cop
+
+    def _hp_heat_out_kwh(
+        self,
+        state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> float:
         dt = self.params.timestep_duration_hours[time_step]
         load = self.params.load_kwh[time_step]
         losses = self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
+        return max(0.0, load + losses + action.heat_to_store_kwh)
+
+    def _max_hp_heat_out_kwh(self, time_step: int, mode: int) -> float:
+        dt = self.params.timestep_duration_hours[time_step]
         cop = self.params.COP(self.params.oat_f[time_step])
-        heat_from_hp = max(0.0, load + losses + action.heat_to_store_kwh)
-        return heat_from_hp / cop
+        turn_on_minutes = 0 if mode else self.params.hp_turn_on_minutes
+        max_hp_elec_in = (1 - min(turn_on_minutes, dt * 60) / (dt * 60)) * self.params.hp_max_kw_elec * dt
+        return max_hp_elec_in * cop
 
     def initial_state(self) -> HeatPumpWaterTankState:
         return HeatPumpWaterTankState.build(
@@ -269,22 +321,22 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         h = self.params.horizon
         start = max(0, h - window)
         prices_kwh = [p / 1000 for p in self.params.elec_price_mwh[start:h]]
-        p_bar = sum(prices_kwh) / len(prices_kwh)
+        p_ref = self._median_kwh(prices_kwh)
         cops = [self.params.COP(self.params.oat_f[t]) for t in range(start, h)]
         cop_bar = sum(cops) / len(cops)
-        return p_bar, cop_bar
+        return p_ref, cop_bar
 
     def terminal_node_cost(self, state: HeatPumpWaterTankState | None = None) -> float:
         if not self.params.terminal_cost_enabled:
             return 0.0
         rswt = self.params.rswt_f[self.params.horizon - 1]
-        p_bar, cop_bar = self._terminal_end_window_stats()
+        p_ref, cop_bar = self._terminal_end_window_stats()
         e_max = self.max_usable_energy_kwh(rswt)
         if state is None:
             usable_gap = e_max
         else:
             usable_gap = max(0.0, e_max - self.usable_energy_kwh(state, rswt))
-        return p_bar / cop_bar * usable_gap
+        return p_ref / cop_bar * usable_gap
 
     def terminal_cost_full(self) -> float:
         return self.terminal_node_cost(None)
@@ -335,6 +387,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         next_state: HeatPumpWaterTankState,
         action: HeatPumpWaterTankAction,
         time_step: int,
+        mode: int = 0,
     ) -> float:
 
         elec_price_kwh = self.params.elec_price_mwh[time_step] / 1000
@@ -348,7 +401,41 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         # Plan stability penalty
         cost += self.stability_penalty(time_step, hp_kwh_el)
 
+        # Short-cycle penalty
+        cost += self.short_cycle_penalty(state, action, time_step, mode)
+
         return cost
+
+    def short_cycle_penalty(
+        self,
+        state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+        mode: int = 0,
+    ) -> float:
+        if not self.params.short_cycle_penalty_enabled:
+            return 0.0
+        if mode:
+            return 0.0
+
+        for cached_action, next_mode in self.get_available_actions(state, time_step, mode):
+            if cached_action == action:
+                if next_mode:
+                    return 0.0
+                break
+
+        heat_from_hp = self._hp_heat_out_kwh(state, action, time_step)
+        if heat_from_hp <= 0.15:
+            return 0.0
+        max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode=0)
+        if max_hp_heat_out <= 1e-9:
+            return 0.0
+        fraction = min(1.0, heat_from_hp / max_hp_heat_out)
+        return (
+            self._horizon_median_elec_price_kwh
+            * self.params.short_cycle_penalty_weight
+            * (1.0 - fraction)
+        )
 
     def _compute_difference_with_plans(self):
         current_node_energy = HeatPumpWaterTankState.build(
@@ -408,7 +495,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         weight = self.params.stability_penalty_weight
         decay = self.params.stability_penalty_decay
         return (
-            self._horizon_avg_elec_price_kwh
+            self._horizon_median_elec_price_kwh
             * weight
             * decay**elapsed_hours
             * abs(hp_kwh_el - previous_plan_for_this_time_step)
@@ -444,7 +531,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             for temp, fraction in drawn_layers
         )
         return (
-            self._horizon_avg_elec_price_kwh
+            self._horizon_median_elec_price_kwh
             * decay ** (max_hour - min(elapsed_hours, max_hour))
             * weight
             * shortfall

@@ -44,6 +44,10 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_exponent_rate: float = 0.15
     rswt_penalty_decay_max_hour: int = 12
 
+    # Short-cycle penalty (from-off fill-to-full below this step's max power)
+    short_cycle_penalty_enabled: bool = True
+    short_cycle_penalty_weight: float = 6.0
+
     # Plan stability penalty
     stability_penalty_enabled: bool = True
     stability_penalty_weight: float = 0.5
@@ -130,6 +134,7 @@ class HeatPumpWaterTankParams(Params):
             "initial_bottom_temp",
             "initial_thermocline1",
             "initial_thermocline2",
+            "hp_currently_on",
         })
         old_dict = self.model_dump()
         new_dict = updated.model_dump()
