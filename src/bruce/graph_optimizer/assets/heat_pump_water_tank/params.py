@@ -71,6 +71,9 @@ class HeatPumpWaterTankParams(Params):
     initial_thermocline1: int = 9
     initial_thermocline2: int = 9
 
+    # HACK while we settle on a solution to the optimal-flexibility divergence
+    temp_sensors_per_tank: int | None = None
+
     # Forecasts
     rswt_f: list[float]
     load_kwh: list[float]
@@ -91,6 +94,17 @@ class HeatPumpWaterTankParams(Params):
             raise ValueError("load_bucket_upper_kwh must be strictly increasing")
         if any(u <= 0 for u in self.load_bucket_upper_kwh):
             raise ValueError("load_bucket_upper_kwh entries must be positive")
+        return self
+
+    # HACK while we settle on a solution to the optimal-flexibility divergence
+    @model_validator(mode="after")
+    def _map_flo_thermoclines_to_layers(self) -> Self:
+        sensors = self.temp_sensors_per_tank
+        if sensors is None or sensors <= 0:
+            return self
+        scale = self.num_layers / sensors
+        self.initial_thermocline1 = int(round(self.initial_thermocline1 * scale))
+        self.initial_thermocline2 = int(round(self.initial_thermocline2 * scale))
         return self
 
     @model_validator(mode="after")
