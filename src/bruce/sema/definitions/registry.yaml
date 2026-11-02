@@ -1,6 +1,6 @@
 metadata:
   registry_version: "1.0"
-  last_updated: "2026-11-01T19:25:00Z"
+  last_updated: "2026-11-02T17:45:00Z"
   maintainer: "gridworks-energy"
 
 formats:
@@ -116,22 +116,22 @@ types:
             - "utc.seconds"
 
   flo.params:
-    latest_version: "000"
+    latest_version: "001"
     owner: gridworks-energy
     versioning_strategy: "literal"
     description: "One request to a FLO for one market slot: bidder, step grid, price and weather forecasts, the modeled store and its state, heat pump facts, market price bounds, and the tuning whose TypeName names the optimizer."
 
     versions:
-      "000":
-        schema_url: "https://schemas.electricity.works/types/flo.params/000"
-        created: "2026-11-01T16:30:00Z"
-        status: "published"
-        summary: "GNodeAlias, CreatedMs, StartUnixS, StepDurationMinutes, the five per-step forecast lists, WeatherForecastId, SeasonalStorageMode with TanksModeled/GallonsPerTank/TempSensorsPerTank, initial store state, heat pump and COP facts, PriceMax/PriceMin, optional PreviousOptimalPath and PreviousEstimateElecUsdMwhNow, Tuning (oneOf flo.tuning.alice, flo.tuning.bruce); axioms StepListLengths, ThermoclinesWithinTheStore, BufferIsOneTank, PriceBounds, PreviousRunTogether."
+      "001":
+        schema_url: "https://schemas.electricity.works/types/flo.params/001"
+        created: "2026-11-02T17:45:00Z"
+        status: "staging"
+        summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
         direct_dependencies:
           structural:
             - "flo.optimal.path:000"
             - "flo.tuning.alice:000"
-            - "flo.tuning.bruce:000"
+            - "flo.tuning.bruce:001"
             - "gw1.seasonal.storage.mode:000"
             - "left.right.dot"
             - "positive.int"
@@ -178,20 +178,21 @@ types:
           structural: []
 
   flo.tuning.bruce:
-    latest_version: "000"
+    latest_version: "001"
     owner: gridworks-energy
     versioning_strategy: "literal"
-    description: "Tuning knobs of the bruce FLO: plant model constants no house word states, and its penalty weights."
+    description: "Tuning knobs of the bruce FLO: plant model constants no house word states, the store model's layer count, and its penalty weights."
 
     versions:
-      "000":
-        schema_url: "https://schemas.electricity.works/types/flo.tuning.bruce/000"
-        created: "2026-11-01T16:20:00Z"
-        status: "published"
-        summary: "Storage loss, heat pump thermal bounds and lift, the RWT line per load bucket, the RSWT, short-cycle and stability penalties, terminal cost; axioms OneLinePerBucket, BucketsAscend."
+      "001":
+        schema_url: "https://schemas.electricity.works/types/flo.tuning.bruce/001"
+        created: "2026-11-02T17:45:00Z"
+        status: "staging"
+        summary: "- NumLayers: add"
         direct_dependencies:
           structural:
             - "non.negative.int"
+            - "positive.int"
 
   price.quantity.unitless:
     latest_version: "001"

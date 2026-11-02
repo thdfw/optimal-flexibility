@@ -11,11 +11,11 @@ types:
         summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
 
   flo.params:
-    latest_version: "000"
+    latest_version: "001"
     versioning_strategy: "literal"
     versions:
-      "000":
-        summary: "GNodeAlias, CreatedMs, StartUnixS, StepDurationMinutes, the five per-step forecast lists, WeatherForecastId, SeasonalStorageMode with TanksModeled/GallonsPerTank/TempSensorsPerTank, initial store state, heat pump and COP facts, PriceMax/PriceMin, optional PreviousOptimalPath and PreviousEstimateElecUsdMwhNow, Tuning (oneOf flo.tuning.alice, flo.tuning.bruce); axioms StepListLengths, ThermoclinesWithinTheStore, BufferIsOneTank, PriceBounds, PreviousRunTogether."
+      "001":
+        summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
 
   flo.recommendation:
     latest_version: "000"
@@ -32,11 +32,11 @@ types:
         summary: "TypeName and Version only."
 
   flo.tuning.bruce:
-    latest_version: "000"
+    latest_version: "001"
     versioning_strategy: "literal"
     versions:
-      "000":
-        summary: "Storage loss, heat pump thermal bounds and lift, the RWT line per load bucket, the RSWT, short-cycle and stability penalties, terminal cost; axioms OneLinePerBucket, BucketsAscend."
+      "001":
+        summary: "- NumLayers: add"
 
   price.quantity.unitless:
     latest_version: "001"

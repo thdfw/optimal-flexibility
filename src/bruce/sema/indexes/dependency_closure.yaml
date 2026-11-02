@@ -11,7 +11,7 @@ types:
       types: []
       versionless_types: []
   flo.params:
-    '000':
+    '001':
       enums:
       - gw1.seasonal.storage.mode:000
       formats:
@@ -24,7 +24,7 @@ types:
       types:
       - flo.optimal.path:000
       - flo.tuning.alice:000
-      - flo.tuning.bruce:000
+      - flo.tuning.bruce:001
       versionless_types: []
   flo.recommendation:
     '000':
@@ -49,10 +49,11 @@ types:
       types: []
       versionless_types: []
   flo.tuning.bruce:
-    '000':
+    '001':
       enums: []
       formats:
       - non.negative.int
+      - positive.int
       types: []
       versionless_types: []
   price.quantity.unitless:

@@ -70,12 +70,22 @@ def bruce_git_commit() -> str:
     return UNKNOWN_COMMIT
 
 
+def thermocline_layer(sensor_position: int, sensors: int, num_layers: int) -> int:
+    """The model layer, counted from the top, at which a thermocline the
+    house observed at ``sensor_position`` of ``sensors`` sits when the store
+    is divided into ``num_layers``: the same fraction of the store, rounded
+    to a layer and never above the top one."""
+    return max(1, round(sensor_position * num_layers / sensors))
+
+
 def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
-    """Spell the request as bruce's own params. The geometry is derived:
-    one layer per temperature sensor across the modeled tanks."""
+    """Spell the request as bruce's own params. The store is modeled at the
+    tuning's resolution, NumLayers, and the thermoclines the house observed
+    in sensor positions are mapped onto those layers."""
     tuning = request.tuning
     if not isinstance(tuning, FloTuningBruce):
         raise TypeError(f"bruce answers flo.tuning.bruce, not {tuning.type_name}")
+    sensors = request.tanks_modeled * request.temp_sensors_per_tank
     hours = [m / 60 for m in request.step_duration_minutes]
     # The previous path starts at the slot that cleared; this request starts
     # at the slot after it. Its step 0 is behind us, its store at the end of
@@ -103,7 +113,7 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
         ],
         bid_min_price_mwh=request.price_min_usd_mwh,
         bid_max_price_mwh=request.price_max_usd_mwh,
-        num_layers=request.tanks_modeled * request.temp_sensors_per_tank,
+        num_layers=tuning.num_layers,
         storage_volume_gallons=request.tanks_modeled * request.gallons_per_tank,
         storage_losses_percent=tuning.storage_losses_percent,
         max_tank_temp_f=request.max_tank_temp_f,
@@ -144,8 +154,12 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
         initial_top_temp=request.initial_top_temp_f,
         initial_middle_temp=request.initial_middle_temp_f,
         initial_bottom_temp=request.initial_bottom_temp_f,
-        initial_thermocline1=request.initial_thermocline1,
-        initial_thermocline2=request.initial_thermocline2,
+        initial_thermocline1=thermocline_layer(
+            request.initial_thermocline1, sensors, tuning.num_layers
+        ),
+        initial_thermocline2=thermocline_layer(
+            request.initial_thermocline2, sensors, tuning.num_layers
+        ),
         rswt_f=list(request.rswt_f_list),
         load_kwh=list(request.load_kwh_list),
         oat_f=list(request.oat_f_list),

@@ -47,6 +47,7 @@ def oak_request() -> FloParams:
         price_max_usd_mwh=2000.0,
         price_min_usd_mwh=-100.0,
         tuning=FloTuningBruce(
+            num_layers=9,
             storage_losses_percent=0.5,
             hp_min_kw_el=0.0,
             hp_max_kw_th=25.0,
@@ -132,3 +133,23 @@ def test_the_previous_path_lines_up_from_its_second_step() -> None:
     assert params.previous_plan_hp_kwh_el_list == [4.5, 0.0]
     assert params.previous_estimate_storage_kwh_now == 180.0
     assert params.previous_estimate_elec_price_mwh_now == 89.0
+
+
+def test_thermoclines_map_onto_the_tunings_layers() -> None:
+    from bruce.service import thermocline_layer
+
+    # Nine sensors on nine layers: the observed position is the layer.
+    assert [thermocline_layer(k, 9, 9) for k in (1, 3, 6, 9)] == [1, 3, 6, 9]
+    # Twelve sensors across three tanks modeled on nine layers: same
+    # fraction of the store, rounded to a layer, never below the first.
+    assert [thermocline_layer(k, 12, 9) for k in (1, 4, 8, 12)] == [1, 3, 6, 9]
+    # Coarser sensors than layers.
+    assert [thermocline_layer(k, 3, 9) for k in (1, 2, 3)] == [3, 6, 9]
+
+
+def test_params_take_the_layers_from_the_tuning() -> None:
+    request = oak_request()
+    params = params_from_request(request)
+    assert isinstance(request.tuning, FloTuningBruce)
+    assert params.num_layers == request.tuning.num_layers
+    assert (params.initial_thermocline1, params.initial_thermocline2) == (3, 6)

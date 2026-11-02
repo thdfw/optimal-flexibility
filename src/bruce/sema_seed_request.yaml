@@ -19,6 +19,6 @@ local_names:
 initial_targets:
   types:
     flo.params:
-      versions: ["000"]
+      versions: ["001"]
     flo.recommendation:
       versions: ["000"]
