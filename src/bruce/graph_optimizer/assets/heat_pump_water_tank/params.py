@@ -4,6 +4,8 @@ from pydantic import model_validator
 
 from ..base import Params
 
+NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH = 0.25
+
 
 class HeatPumpWaterTankParams(Params):
     horizon: int = 48

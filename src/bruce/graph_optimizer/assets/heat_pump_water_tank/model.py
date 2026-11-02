@@ -2,7 +2,7 @@ from logging import Logger, getLogger
 
 from ..base import Model
 from .action import HeatPumpWaterTankAction
-from .params import HeatPumpWaterTankParams
+from .params import NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH, HeatPumpWaterTankParams
 from .state import HeatPumpWaterTankState
 
 
@@ -23,7 +23,7 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
         if store_heat_in > 0:
             self.logger.debug(f"Charge {state} by {store_heat_in} kWh")
             next_state = self.charge(state, store_heat_in)
-        elif store_heat_in < -0.5:
+        elif store_heat_in < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH:
             self.logger.debug(f"Discharge {state} by {-store_heat_in} kWh")
             next_state = self.discharge(state, store_heat_in)
         else:

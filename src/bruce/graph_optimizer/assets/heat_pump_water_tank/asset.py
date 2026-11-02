@@ -11,7 +11,7 @@ from ..base import Asset, TransitionMatrixParams
 
 logger = get_logger("assets.heat_pump_water_tank")
 from .action import HeatPumpWaterTankAction
-from .params import HeatPumpWaterTankParams
+from .params import NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH, HeatPumpWaterTankParams
 from .state import HeatPumpWaterTankState
 from .transition_matrix_params import HeatPumpWaterTankTransitionMatrixParams
 
@@ -194,7 +194,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         seen: set[HeatPumpWaterTankAction] = set()
         for hp_heat_out, next_mode in hp_heat_out_levels:
             heat_to_store_desired = hp_heat_out - load - losses
-            idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
+            if heat_to_store_desired < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH:
+                idx = int(np.searchsorted(self._heat_to_store_discretized_array, heat_to_store_desired, side="right") - 1)
+                idx = max(0, idx)
+            else:
+                idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
             action = self._action_by_heat_to_store_kwh[self._heat_to_store_discretized[idx]]
             if action not in seen:
                 seen.add(action)
@@ -211,7 +215,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                         if heat <= 0:
                             break
                         candidate = self._action_by_heat_to_store_kwh[heat]
-                        successor = self.closest_state(self.next_state(state, candidate))
+                        successor = self.closest_state(self.next_state(state, candidate), from_state=state)
                         if successor.energy <= self.max_state_energy:
                             fill_action = candidate
                             break
@@ -296,7 +300,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return len(self.params.load_bucket_upper_kwh) + 1
 
     def action_uses_transition_variants(self, action: HeatPumpWaterTankAction) -> bool:
-        return action.heat_to_store_kwh < -0.5
+        return action.heat_to_store_kwh < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
 
     def transition_variant(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> int:
         if not self.action_uses_transition_variants(action):
@@ -371,7 +375,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         temps_2 = self._temps_by_layer(state2)
         return sum(abs(a-b) for a, b in zip(temps_1, temps_2))
 
-    def closest_state(self, state: HeatPumpWaterTankState) -> HeatPumpWaterTankState:
+    def closest_state(self, state: HeatPumpWaterTankState, from_state: HeatPumpWaterTankState | None = None) -> HeatPumpWaterTankState:
         energy_window_kwh = 0.5
         shortlist = [
             candidate
@@ -387,6 +391,20 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 if abs(candidate.energy - state.energy) <= energy_window_kwh
             ]
             energy_window_kwh += 0.5
+
+        min_discharge = NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
+        if from_state is not None and state.energy < from_state.energy - min_discharge:
+            colder = [c for c in shortlist if c.energy < from_state.energy - min_discharge]
+            while not colder and len(shortlist) < len(self.state_space):
+                energy_window_kwh += 0.5
+                shortlist = [
+                    candidate
+                    for candidate in self.state_space
+                    if abs(candidate.energy - state.energy) <= energy_window_kwh
+                ]
+                colder = [c for c in shortlist if c.energy < from_state.energy - min_discharge]
+            if colder:
+                shortlist = colder
 
         return min(
             shortlist,
