@@ -1,0 +1,65 @@
+# GENERATED FILE - DO NOT EDIT
+# Generated from definitions/registry.yaml
+
+
+types:
+  flo.optimal.path:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
+
+  flo.params:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "GNodeAlias, CreatedMs, StartUnixS, StepDurationMinutes, the five per-step forecast lists, WeatherForecastId, SeasonalStorageMode with TanksModeled/GallonsPerTank/TempSensorsPerTank, initial store state, heat pump and COP facts, PriceMax/PriceMin, optional PreviousOptimalPath and PreviousEstimateElecUsdMwhNow, Tuning (oneOf flo.tuning.alice, flo.tuning.bruce); axioms StepListLengths, ThermoclinesWithinTheStore, BufferIsOneTank, PriceBounds, PreviousRunTogether."
+
+  flo.recommendation:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "Bid fields (BidderAlias, PqPairs, PriceUnit, QuantityUnit), OptimalPathList index-linked to PqPairs, FloName, FloRepo, FloGitCommit, CreatedMs; axioms AtLeastOnePair, PathPerPair, FirstStepIsTheBid, PairsDescend, PathsStartTogether."
+
+  flo.tuning.alice:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "TypeName and Version only."
+
+  flo.tuning.bruce:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "Storage loss, heat pump thermal bounds and lift, the RWT line per load bucket, the RSWT, short-cycle and stability penalties, terminal cost; axioms OneLinePerBucket, BucketsAscend."
+
+  price.quantity.unitless:
+    latest_version: "001"
+    versioning_strategy: "literal"
+    versions:
+      "001":
+        summary: "Rename PriceTimes1000/QuantityTimes1000 to PriceX1000/QuantityX1000."
+
+enums:
+  gw1.seasonal.storage.mode:
+    enum_type: "versioned"
+    note: "This enum is versioned; new versions are additive only."
+    versions:
+      "000": {}
+
+  market.price.unit:
+    enum_type: "versioned"
+    note: "This enum is versioned; new versions are additive only."
+    versions:
+      "000": {}
+
+  market.quantity.unit:
+    enum_type: "versioned"
+    note: "This enum is versioned; new versions are additive only."
+    versions:
+      "000": {}

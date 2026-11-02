@@ -243,7 +243,12 @@ class Graph(Generic[S, A, P]):
 
         bid_min = int(self.params.bid_min_price_mwh)
         bid_max = int(self.params.bid_max_price_mwh)
-        price_range_mwh = sorted(set(range(bid_min, bid_max)) | {forecast_price_mwh})
+        # Walk the price domain from the market ceiling down. The first pair is
+        # always at bid_max, so the pairs partition [bid_min, bid_max] into
+        # segments: pair i holds for prices in (price_{i+1}, price_i].
+        price_range_mwh = sorted(
+            set(range(bid_min, bid_max + 1)) | {forecast_price_mwh}, reverse=True
+        )
         forecast_price_kwh = forecast_price_mwh / 1000
 
         pq_pairs: list[PriceQuantityPair] = []
@@ -261,7 +266,7 @@ class Graph(Generic[S, A, P]):
             )
             best_quantity = max(0, best_edge.elec_used_kwh)
 
-            if not pq_pairs or best_quantity - pq_pairs[-1].quantity_kwh > 0.01:
+            if not pq_pairs or abs(best_quantity - pq_pairs[-1].quantity_kwh) > 0.01:
                 pq_pairs.append(
                     PriceQuantityPair(
                         price_mwh=float(trial_price),

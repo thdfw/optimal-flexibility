@@ -1,0 +1,209 @@
+metadata:
+  registry_version: "1.0"
+  last_updated: "2026-11-01T19:25:00Z"
+  maintainer: "gridworks-energy"
+
+formats:
+  git.commit:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/git.commit"
+    created: "2026-10-08T21:00:00Z"
+    status: "published"
+    description: "A git commit identifying running code: a 40-character lowercase git hash, suffixed -dirty when the working tree had uncommitted changes"
+
+  left.right.dot:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/left.right.dot"
+    created: "2022-01-01T00:00:00Z"
+    status: "published"
+    description: "Dot-separated hierarchical identifier composed of lowercase alphanumeric segments"
+
+  non.empty.string:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/non.empty.string"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "String with at least one character"
+
+  non.negative.int:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/non.negative.int"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "Non-negative integer with non-coercive serialized validation"
+
+  positive.int:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/positive.int"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "Positive integer with non-coercive serialized validation"
+
+  utc.milliseconds:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/utc.milliseconds"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "UTC timestamp in whole milliseconds since Unix epoch (2000–3000 range)"
+
+  utc.seconds:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/utc.seconds"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "UTC timestamp in whole seconds since Unix epoch (2000–3000 range)"
+
+  uuid4.str:
+    owner: gridworks-energy
+    schema_url: "https://schemas.electricity.works/formats/uuid4.str"
+    created: "2024-09-02T15:00:00Z"
+    status: "published"
+    description: "Canonical lowercase UUIDv4 string (RFC 4122) in 8-4-4-4-12 format"
+
+enums:
+  gw1.seasonal.storage.mode:
+    latest_version: "000"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Seasonal storage operating mode for layouts that distinguish all-tank from buffer-only operation."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/enums/gw1.seasonal.storage.mode/000"
+        created: "2026-01-14T18:04:00Z"
+        status: "published"
+
+  market.price.unit:
+    latest_version: "000"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Unit of the price axis for a market type."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/enums/market.price.unit/000"
+        created: "2024-12-05T19:25:00Z"
+        status: "published"
+
+  market.quantity.unit:
+    latest_version: "000"
+    owner: gridworks-energy
+    enum_type: "versioned"
+    description: "Unit of the quantity axis for a market type."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/enums/market.quantity.unit/000"
+        created: "2024-12-05T19:25:00Z"
+        status: "published"
+
+types:
+  flo.optimal.path:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "A FLO's expected operating path over its horizon for one first-step electricity choice: heat pump average power and store energy per step."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/flo.optimal.path/000"
+        created: "2026-11-01T15:20:00Z"
+        status: "published"
+        summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
+        direct_dependencies:
+          structural:
+            - "positive.int"
+            - "utc.seconds"
+
+  flo.params:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "One request to a FLO for one market slot: bidder, step grid, price and weather forecasts, the modeled store and its state, heat pump facts, market price bounds, and the tuning whose TypeName names the optimizer."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/flo.params/000"
+        created: "2026-11-01T16:30:00Z"
+        status: "published"
+        summary: "GNodeAlias, CreatedMs, StartUnixS, StepDurationMinutes, the five per-step forecast lists, WeatherForecastId, SeasonalStorageMode with TanksModeled/GallonsPerTank/TempSensorsPerTank, initial store state, heat pump and COP facts, PriceMax/PriceMin, optional PreviousOptimalPath and PreviousEstimateElecUsdMwhNow, Tuning (oneOf flo.tuning.alice, flo.tuning.bruce); axioms StepListLengths, ThermoclinesWithinTheStore, BufferIsOneTank, PriceBounds, PreviousRunTogether."
+        direct_dependencies:
+          structural:
+            - "flo.optimal.path:000"
+            - "flo.tuning.alice:000"
+            - "flo.tuning.bruce:000"
+            - "gw1.seasonal.storage.mode:000"
+            - "left.right.dot"
+            - "positive.int"
+            - "utc.milliseconds"
+            - "utc.seconds"
+            - "uuid4.str"
+
+  flo.recommendation:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "A FLO's answer to one flo.params request: the bid curve to submit for the slot and, per price-quantity pair, the optimal path that quantity leads to, with the FLO's provenance."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/flo.recommendation/000"
+        created: "2026-11-01T15:50:00Z"
+        status: "published"
+        summary: "Bid fields (BidderAlias, PqPairs, PriceUnit, QuantityUnit), OptimalPathList index-linked to PqPairs, FloName, FloRepo, FloGitCommit, CreatedMs; axioms AtLeastOnePair, PathPerPair, FirstStepIsTheBid, PairsDescend, PathsStartTogether."
+        direct_dependencies:
+          structural:
+            - "flo.optimal.path:000"
+            - "git.commit"
+            - "left.right.dot"
+            - "market.price.unit:000"
+            - "market.quantity.unit:000"
+            - "non.empty.string"
+            - "price.quantity.unitless:001"
+            - "utc.milliseconds"
+
+  flo.tuning.alice:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Tuning of the alice FLO, which has none; naming it in operational params means no optimizer runs."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/flo.tuning.alice/000"
+        created: "2026-11-01T16:25:00Z"
+        status: "published"
+        summary: "TypeName and Version only."
+        direct_dependencies:
+          structural: []
+
+  flo.tuning.bruce:
+    latest_version: "000"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Tuning knobs of the bruce FLO: plant model constants no house word states, and its penalty weights."
+
+    versions:
+      "000":
+        schema_url: "https://schemas.electricity.works/types/flo.tuning.bruce/000"
+        created: "2026-11-01T16:20:00Z"
+        status: "published"
+        summary: "Storage loss, heat pump thermal bounds and lift, the RWT line per load bucket, the RSWT, short-cycle and stability penalties, terminal cost; axioms OneLinePerBucket, BucketsAscend."
+        direct_dependencies:
+          structural:
+            - "non.negative.int"
+
+  price.quantity.unitless:
+    latest_version: "001"
+    owner: gridworks-energy
+    versioning_strategy: "literal"
+    description: "Integer price and quantity pair for market bidding and dispatch curves, with both values serialized at x1000 scaling."
+
+    versions:
+      "001":
+        schema_url: "https://schemas.electricity.works/types/price.quantity.unitless/001"
+        created: "2025-10-30T17:29:00Z"
+        status: "published"
+        summary: "Rename PriceTimes1000/QuantityTimes1000 to PriceX1000/QuantityX1000."
+        direct_dependencies:
+          structural: []

@@ -1,0 +1,66 @@
+# GENERATED FILE - DO NOT EDIT
+# Generated from definitions/registry.yaml
+#
+# ------------------------------------------------------------------
+# LOCAL LOOKUP (NON-AUTHORITATIVE)
+#
+# This file provides local resolution from Sema vocabulary words
+# to schema files within this snapshot.
+# ------------------------------------------------------------------
+
+types:
+  flo.optimal.path:
+    latest_version: '000'
+    versioning_strategy: literal
+    versions:
+      '000': definitions/types/flo.optimal.path/000.yaml
+  flo.params:
+    latest_version: '000'
+    versioning_strategy: literal
+    versions:
+      '000': definitions/types/flo.params/000.yaml
+  flo.recommendation:
+    latest_version: '000'
+    versioning_strategy: literal
+    versions:
+      '000': definitions/types/flo.recommendation/000.yaml
+  flo.tuning.alice:
+    latest_version: '000'
+    versioning_strategy: literal
+    versions:
+      '000': definitions/types/flo.tuning.alice/000.yaml
+  flo.tuning.bruce:
+    latest_version: '000'
+    versioning_strategy: literal
+    versions:
+      '000': definitions/types/flo.tuning.bruce/000.yaml
+  price.quantity.unitless:
+    latest_version: '001'
+    versioning_strategy: literal
+    versions:
+      '001': definitions/types/price.quantity.unitless/001.yaml
+enums:
+  gw1.seasonal.storage.mode:
+    enum_type: versioned
+    latest_version: '000'
+    versions:
+      '000': definitions/enums/gw1.seasonal.storage.mode/000.yaml
+  market.price.unit:
+    enum_type: versioned
+    latest_version: '000'
+    versions:
+      '000': definitions/enums/market.price.unit/000.yaml
+  market.quantity.unit:
+    enum_type: versioned
+    latest_version: '000'
+    versions:
+      '000': definitions/enums/market.quantity.unit/000.yaml
+formats:
+  git.commit: definitions/formats/git.commit.yaml
+  left.right.dot: definitions/formats/left.right.dot.yaml
+  non.empty.string: definitions/formats/non.empty.string.yaml
+  non.negative.int: definitions/formats/non.negative.int.yaml
+  positive.int: definitions/formats/positive.int.yaml
+  utc.milliseconds: definitions/formats/utc.milliseconds.yaml
+  utc.seconds: definitions/formats/utc.seconds.yaml
+  uuid4.str: definitions/formats/uuid4.str.yaml
