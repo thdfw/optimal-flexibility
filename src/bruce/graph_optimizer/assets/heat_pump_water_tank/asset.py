@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from typing import TYPE_CHECKING
 
@@ -32,6 +33,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         self._build_available_actions_cache()
 
     def on_params_updated(self) -> None:
+        logger.info(json.dumps(self.params.model_dump(mode="json"), separators=(",", ":")))
         self._refresh_horizon_median_elec_price_kwh()
         self._compute_difference_with_plans()
         self._fill_to_full_action_by_state = {}
