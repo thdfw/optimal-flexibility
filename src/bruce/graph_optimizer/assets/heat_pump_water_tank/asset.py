@@ -215,7 +215,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                         if heat <= 0:
                             break
                         candidate = self._action_by_heat_to_store_kwh[heat]
-                        successor = self.closest_state(self.next_state(state, candidate), from_state=state)
+                        successor = self.closest_state(
+                            self.next_state(state, candidate), from_state=state, action=candidate
+                        )
                         if successor.energy <= self.max_state_energy:
                             fill_action = candidate
                             break
@@ -375,7 +377,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         temps_2 = self._temps_by_layer(state2)
         return sum(abs(a-b) for a, b in zip(temps_1, temps_2))
 
-    def closest_state(self, state: HeatPumpWaterTankState, from_state: HeatPumpWaterTankState | None = None) -> HeatPumpWaterTankState:
+    def closest_state(
+        self,
+        state: HeatPumpWaterTankState,
+        from_state: HeatPumpWaterTankState | None = None,
+        action: HeatPumpWaterTankAction | None = None,
+    ) -> HeatPumpWaterTankState:
         energy_window_kwh = 0.5
         shortlist = [
             candidate
@@ -392,9 +399,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             ]
             energy_window_kwh += 0.5
 
-        min_discharge = NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
-        if from_state is not None and state.energy < from_state.energy - min_discharge:
-            colder = [c for c in shortlist if c.energy < from_state.energy - min_discharge]
+        if (
+            from_state is not None
+            and action is not None
+            and action.heat_to_store_kwh < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
+        ):
+            colder = [c for c in shortlist if c.energy < from_state.energy]
             while not colder and len(shortlist) < len(self.state_space):
                 energy_window_kwh += 0.5
                 shortlist = [
@@ -402,7 +412,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     for candidate in self.state_space
                     if abs(candidate.energy - state.energy) <= energy_window_kwh
                 ]
-                colder = [c for c in shortlist if c.energy < from_state.energy - min_discharge]
+                colder = [c for c in shortlist if c.energy < from_state.energy]
             if colder:
                 shortlist = colder
 

@@ -1,7 +1,7 @@
 from typing import Self
 
 from ..base import Params, TransitionMatrixParams
-from .params import HeatPumpWaterTankParams
+from .params import NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH, HeatPumpWaterTankParams
 
 
 class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
@@ -15,6 +15,7 @@ class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
     max_load_kw_th: float
     hp_max_kw_th: float
     max_timestep_duration_hours: float
+    net_heat_to_store_min_discharge_kwh: float
 
     @classmethod
     def from_asset_params(cls, params: Params) -> Self:
@@ -31,4 +32,5 @@ class HeatPumpWaterTankTransitionMatrixParams(TransitionMatrixParams):
             max_load_kw_th=params.max_load_kw_th,
             hp_max_kw_th=params.hp_max_kw_th,
             max_timestep_duration_hours=max(params.timestep_duration_hours),
+            net_heat_to_store_min_discharge_kwh=NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH,
         )
