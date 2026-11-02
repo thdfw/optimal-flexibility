@@ -77,13 +77,18 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
     if not isinstance(tuning, FloTuningBruce):
         raise TypeError(f"bruce answers flo.tuning.bruce, not {tuning.type_name}")
     hours = [m / 60 for m in request.step_duration_minutes]
+    # The previous path starts at the slot that cleared; this request starts
+    # at the slot after it. Its step 0 is behind us, its store at the end of
+    # step 0 is the store now, and its plan from step 1 on lines up with
+    # this request's steps for the stability penalty.
     previous = request.previous_optimal_path
     previous_plan_kwh: list[float] | None = None
     previous_storage_kwh: float | None = None
     if previous is not None:
         previous_hours = [m / 60 for m in previous.step_duration_minutes]
         previous_plan_kwh = [
-            w * h / 1000 for w, h in zip(previous.hp_avg_w_list, previous_hours, strict=True)
+            w * h / 1000
+            for w, h in zip(previous.hp_avg_w_list[1:], previous_hours[1:], strict=True)
         ]
         previous_storage_kwh = previous.store_wh_list[0] / 1000
     return HeatPumpWaterTankParams(

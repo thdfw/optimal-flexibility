@@ -6,8 +6,8 @@ test_generate_bid needs)."""
 import pytest
 
 from bruce.sema.enums import SeasonalStorageMode
-from bruce.sema.types import FloParams, FloRecommendation, FloTuningBruce
-from bruce.service import recommend
+from bruce.sema.types import FloOptimalPath, FloParams, FloRecommendation, FloTuningBruce
+from bruce.service import params_from_request, recommend
 
 HORIZON = 12
 LMP = [28.14, 28.53, 46.38, 44.84, 44.8, 32.94, 39.68, 32.07, 30.07, 27.95, 29.87, 35.63]
@@ -114,3 +114,21 @@ def test_bytes_boundary(recommendation: FloRecommendation) -> None:
     reply = FloRecommendation.from_bytes(recommend_bytes(oak_request().to_bytes()))
     assert reply.pq_pairs == recommendation.pq_pairs
     assert reply.optimal_path_list == recommendation.optimal_path_list
+
+
+def test_the_previous_path_lines_up_from_its_second_step() -> None:
+    """The previous path starts at the slot that cleared, the request at the
+    slot after: the plan bruce compares against starts at the path's step 1,
+    and the store it expected now is the store at the end of step 0."""
+    request = oak_request()
+    previous = FloOptimalPath(
+        start_unix_s=request.start_unix_s - 3600,
+        step_duration_minutes=[60, 60, 60],
+        hp_avg_w_list=[3000, 4500, 0],
+        store_wh_list=[180000, 185000, 182000],
+    )
+    request = request.model_copy(update={"previous_optimal_path": previous, "previous_estimate_elec_usd_mwh_now": 89.0})
+    params = params_from_request(request)
+    assert params.previous_plan_hp_kwh_el_list == [4.5, 0.0]
+    assert params.previous_estimate_storage_kwh_now == 180.0
+    assert params.previous_estimate_elec_price_mwh_now == 89.0
