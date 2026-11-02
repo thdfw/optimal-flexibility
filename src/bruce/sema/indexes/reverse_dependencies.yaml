@@ -1,0 +1,63 @@
+# GENERATED FILE - DO NOT EDIT
+# Generated from definitions/registry.yaml
+
+types:
+  flo.optimal.path:
+    '000':
+      used_by:
+      - flo.params:000
+      - flo.recommendation:000
+  flo.tuning.alice:
+    '000':
+      used_by:
+      - flo.params:000
+  flo.tuning.bruce:
+    '000':
+      used_by:
+      - flo.params:000
+  price.quantity.unitless:
+    '001':
+      used_by:
+      - flo.recommendation:000
+enums:
+  gw1.seasonal.storage.mode:
+    '000':
+      used_by:
+      - flo.params:000
+  market.price.unit:
+    '000':
+      used_by:
+      - flo.recommendation:000
+  market.quantity.unit:
+    '000':
+      used_by:
+      - flo.recommendation:000
+formats:
+  git.commit:
+    used_by:
+    - flo.recommendation:000
+  left.right.dot:
+    used_by:
+    - flo.params:000
+    - flo.recommendation:000
+  non.empty.string:
+    used_by:
+    - flo.recommendation:000
+  non.negative.int:
+    used_by:
+    - flo.tuning.bruce:000
+  positive.int:
+    used_by:
+    - flo.optimal.path:000
+    - flo.params:000
+  utc.milliseconds:
+    used_by:
+    - flo.params:000
+    - flo.recommendation:000
+  utc.seconds:
+    used_by:
+    - flo.optimal.path:000
+    - flo.params:000
+  uuid4.str:
+    used_by:
+    - flo.params:000
