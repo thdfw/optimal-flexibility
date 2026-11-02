@@ -166,7 +166,7 @@ class Asset(ABC, Generic[S, A, P]):
     def transition_variant(self, state: S, action: A, time_step: int) -> int:
         return 0
 
-    def closest_state(self, state: S) -> S:
+    def closest_state(self, state: S, from_state: S | None = None) -> S:
         return min(self.state_space, key=lambda candidate: self.state_distance(state, candidate))
 
     @abstractmethod
