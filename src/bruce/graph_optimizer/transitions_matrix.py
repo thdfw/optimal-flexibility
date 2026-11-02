@@ -57,7 +57,7 @@ def _build_transition_matrix[S: State, A: Action, P: Params](asset: Asset[S, A, 
         for variant in variant_range:
             for state in asset.state_space:
                 next_state = asset.next_state(state, action, transition_variant=variant)
-                closest = asset.closest_state(next_state, from_state=state)
+                closest = asset.closest_state(next_state, from_state=state, action=action)
                 if len(shape) == 2:
                     matrix[action_i, state.index] = closest.index
                 else:
