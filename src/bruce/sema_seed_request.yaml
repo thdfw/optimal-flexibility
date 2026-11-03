@@ -1,0 +1,24 @@
+# sema_seed_request.yaml
+#
+# Seed request for bruce's vendored Sema snapshot (src/bruce/sema): the
+# words bruce speaks across the FLO boundary, in and out, so a request is
+# decoded and a recommendation encoded through sema's generated classes
+# rather than hand-built dicts. Regenerate with:
+#
+#   scripts/regen_sema_snapshot.sh
+#
+# Every word is pinned to ONE version, the version bruce speaks; `{}`
+# (registry latest) is never used, so a dependency closure cannot bring a
+# second version of a word in behind the pinned one. The tuning words,
+# flo.optimal.path, price.quantity.unitless and the enums and formats
+# arrive through the closure of the two roots.
+
+local_names:
+  strip_prefixes: [gw1, gw]
+
+initial_targets:
+  types:
+    flo.params:
+      versions: ["001"]
+    flo.recommendation:
+      versions: ["000"]
