@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from bruce.graph_optimizer.graph import Edge, Graph, Node
 
 from .action import HeatPumpWaterTankAction
@@ -33,6 +35,15 @@ def _edge_for_transition(
     return None
 
 
+def _step_start_datetimes(params: HeatPumpWaterTankParams) -> list[datetime]:
+    """Wall-clock start of each step (index 0 .. horizon); last is end of final step."""
+    t0 = datetime.fromtimestamp(params.start_unix_s)
+    out: list[datetime] = [t0]
+    for dt_h in params.timestep_duration_hours:
+        out.append(out[-1] + timedelta(hours=dt_h))
+    return out
+
+
 def _hp_heat_out_kwh(
     asset: HeatPumpWaterTankAsset,
     state: HeatPumpWaterTankState,
@@ -50,12 +61,18 @@ def plot_graph_results(
     save_as: str | None = None,
 ) -> None:
     import matplotlib
+    if not show:
+        matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
     from matplotlib.colors import Normalize
 
     asset = _graph_asset(graph)
     params = asset.params
     initial_node = _initial_node(graph)
+    step_starts = _step_start_datetimes(params)
+    # One timestamp per node on the path (initial through terminal) == horizon + 1.
+    sp_time: list[datetime] = step_starts
 
     sp_top_temp: list[float] = []
     sp_middle_temp: list[float] = []
@@ -110,8 +127,6 @@ def plot_graph_results(
         (e - asset.min_state_energy) / (asset.max_state_energy - asset.min_state_energy) * 100
         for e in sp_stored_energy
     ]
-    sp_time = list(range(params.horizon + 1))
-
     terminal_node = initial_node
     while terminal_node.next_node is not None:
         terminal_node = terminal_node.next_node
@@ -127,27 +142,10 @@ def plot_graph_results(
     ]
     prices = params.elec_price_mwh
 
+    start_dt = step_starts[0]
+    title_start = start_dt.strftime("%b %d, %Y %H:%M")
+    total_cost_str = f"${round(initial_node.pathcost, 2)}"
     fig, ax = plt.subplots(3, 1, sharex=True, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
-    fig.suptitle(f"Horizon: {params.horizon} steps — Cost: {round(initial_node.pathcost, 2)} $", fontsize=10)
-
-    penalties = [
-        ("RSWT penalty", params.rswt_penalty_enabled),
-        ("Stability penalty", params.stability_penalty_enabled),
-        ("Short-cycle penalty", params.short_cycle_penalty_enabled),
-        ("Terminal cost", params.terminal_cost_enabled),
-    ]
-    for idx, (label, enabled) in enumerate(penalties):
-        color = "green" if enabled else "red"
-        fig.text(
-            0.99,
-            0.99 - idx * 0.045,
-            f"\u25cf {label}",
-            ha="right",
-            va="top",
-            fontsize=7.5,
-            color=color,
-            transform=fig.transFigure,
-        )
 
     ax[0].step(sp_time, sp_hp_heat_out_kw, where="post", color="tab:blue", alpha=0.6, label="HP")
     ax[0].step(sp_time[:-1], load_kw, where="post", color="tab:red", alpha=0.6, label="Load")
@@ -169,8 +167,19 @@ def plot_graph_results(
     th1_rev = [params.num_layers - x for x in sp_thermocline1]
     th2_rev = [params.num_layers - x for x in sp_thermocline2]
 
+    bar_width_days = [
+        timedelta(hours=params.timestep_duration_hours[min(t, params.horizon - 1)]) * 0.9
+        for t in range(len(sp_time))
+    ]
+
     bars_top = ax[1].bar(
-        sp_time, sp_thermocline1, bottom=th1_rev, color=tank_top_colors, alpha=0.7, width=0.9, align="edge"
+        sp_time,
+        sp_thermocline1,
+        bottom=th1_rev,
+        color=tank_top_colors,
+        alpha=0.7,
+        width=bar_width_days,
+        align="edge",
     )
     bars_middle = ax[1].bar(
         sp_time,
@@ -178,21 +187,15 @@ def plot_graph_results(
         bottom=th2_rev,
         color=tank_middle_colors,
         alpha=0.7,
-        width=0.9,
+        width=bar_width_days,
         align="edge",
     )
     bars_bottom = ax[1].bar(
-        sp_time, th2_rev, bottom=0, color=tank_bottom_colors, alpha=0.7, width=0.9, align="edge"
+        sp_time, th2_rev, bottom=0, color=tank_bottom_colors, alpha=0.7, width=bar_width_days, align="edge"
     )
     ax[1].set_ylabel("Storage state")
     ax[1].set_ylim([0, params.num_layers])
     ax[1].set_yticks([])
-
-    if 10 < len(sp_time) < 50:
-        hour_labels = [f"{t}h" for t in range(0, len(sp_time) + 1, 2)]
-        for a in ax:
-            a.set_xticks(list(range(0, len(sp_time) + 1, 2)))
-            a.set_xticklabels(hour_labels, fontsize=8)
 
     for i, bar in enumerate(bars_top):
         height = bar.get_height()
@@ -247,57 +250,124 @@ def plot_graph_results(
         )
 
     ax1_soc = ax[1].twinx()
-    ax1_soc.plot(sp_time, sp_soc, color="black", alpha=0.4, label="SoC")
+    soc_time = step_starts[: len(sp_soc)]
+    ax1_soc.plot(soc_time, sp_soc, color="black", alpha=0.4, label="SoC")
     ax1_soc.set_ylabel("State of charge [%]")
     ax1_soc.set_ylim([-1, 101])
 
-    sp_time_mid = [t + 0.5 for t in sp_time[:-1]]
+    sp_time_mid = [
+        step_starts[t]
+        + timedelta(hours=params.timestep_duration_hours[t] / 2.0)
+        for t in range(params.horizon)
+    ]
+    bar_width_penalty_days = [timedelta(hours=params.timestep_duration_hours[t]) * 0.9 for t in range(params.horizon)]
     rswt_vals = sp_rswt_penalty[:-1]
     stab_vals = sp_stability_penalty[:-1]
     short_vals = sp_short_cycle_penalty[:-1]
     terminal_vals = [0.0] * len(sp_time_mid)
-    if terminal_vals:
+    if terminal_vals and params.terminal_cost_enabled:
         terminal_vals[-1] = terminal_cost
-    stack_rswt_stab = [r + s for r, s in zip(rswt_vals, stab_vals)]
-    stack_rswt_stab_short = [rs + sc for rs, sc in zip(stack_rswt_stab, short_vals)]
-    ax[2].bar(sp_time_mid, rswt_vals, width=0.9, color="tab:orange", alpha=0.7, label="RSWT penalty")
-    ax[2].bar(sp_time_mid, stab_vals, bottom=rswt_vals, width=0.9, color="tab:purple", alpha=0.7, label="Stability penalty")
-    ax[2].bar(
-        sp_time_mid,
-        short_vals,
-        bottom=stack_rswt_stab,
-        width=0.9,
-        color="tab:cyan",
-        alpha=0.7,
-        label="Short-cycle penalty",
-    )
-    ax[2].bar(
-        sp_time_mid,
-        terminal_vals,
-        bottom=stack_rswt_stab_short,
-        width=0.9,
-        color="tab:green",
-        alpha=0.7,
-        label=f"Terminal cost ({terminal_cost_pct:.0f}% of max)",
-    )
-    ax[2].set_xlabel("Time step")
+
+    stack_bottom = [0.0] * len(sp_time_mid)
+    if params.rswt_penalty_enabled:
+        ax[2].bar(
+            sp_time_mid,
+            rswt_vals,
+            bottom=stack_bottom,
+            width=bar_width_penalty_days,
+            color="tab:orange",
+            alpha=0.7,
+            label="RSWT penalty",
+        )
+        stack_bottom = [b + v for b, v in zip(stack_bottom, rswt_vals)]
+    if params.stability_penalty_enabled:
+        ax[2].bar(
+            sp_time_mid,
+            stab_vals,
+            bottom=stack_bottom,
+            width=bar_width_penalty_days,
+            color="tab:purple",
+            alpha=0.7,
+            label="Stability penalty",
+        )
+        stack_bottom = [b + v for b, v in zip(stack_bottom, stab_vals)]
+    if params.short_cycle_penalty_enabled:
+        ax[2].bar(
+            sp_time_mid,
+            short_vals,
+            bottom=stack_bottom,
+            width=bar_width_penalty_days,
+            color="tab:cyan",
+            alpha=0.7,
+            label="Short-cycle penalty",
+        )
+        stack_bottom = [b + v for b, v in zip(stack_bottom, short_vals)]
+    if params.terminal_cost_enabled:
+        ax[2].bar(
+            sp_time_mid,
+            terminal_vals,
+            bottom=stack_bottom,
+            width=bar_width_penalty_days,
+            color="tab:green",
+            alpha=0.7,
+            label=f"Terminal cost ({terminal_cost_pct:.0f}% of max)",
+        )
+
+    ax[2].set_xlabel("Time (local)")
     ax[2].set_ylabel("Penalty [$]")
     ax[2].legend(loc="upper right", fontsize=8)
-    max_stack = max(
-        (stack_rswt_stab_short[i] + terminal_vals[i] for i in range(len(terminal_vals))),
-        default=0.0,
-    )
-    max_penalty = max(
-        max(rswt_vals, default=0),
-        max(stab_vals, default=0),
-        max(short_vals, default=0),
-        terminal_cost,
-        max_stack,
-    )
+
+    per_series_max: list[float] = []
+    if params.rswt_penalty_enabled:
+        per_series_max.append(max(rswt_vals, default=0.0))
+    if params.stability_penalty_enabled:
+        per_series_max.append(max(stab_vals, default=0.0))
+    if params.short_cycle_penalty_enabled:
+        per_series_max.append(max(short_vals, default=0.0))
+    if params.terminal_cost_enabled:
+        per_series_max.append(terminal_cost)
+
+    max_stack = 0.0
+    for i in range(len(sp_time_mid)):
+        total = 0.0
+        if params.rswt_penalty_enabled:
+            total += rswt_vals[i]
+        if params.stability_penalty_enabled:
+            total += stab_vals[i]
+        if params.short_cycle_penalty_enabled:
+            total += short_vals[i]
+        if params.terminal_cost_enabled:
+            total += terminal_vals[i]
+        max_stack = max(max_stack, total)
+
+    max_penalty = max(max(per_series_max, default=0.0), max_stack)
     if max_penalty > 0:
         ax[2].set_ylim([0, max_penalty * 1.3])
 
-    plt.tight_layout()
+    for a in ax:
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        a.xaxis.set_major_locator(mdates.AutoDateLocator())
+    plt.setp(ax[2].xaxis.get_majorticklabels(), rotation=25, ha="right")
+    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
+    fig.text(
+        0.5,
+        0.98,
+        params.site_id,
+        ha="center",
+        va="top",
+        fontsize=11,
+        fontweight="bold",
+        transform=fig.transFigure,
+    )
+    fig.text(
+        0.5,
+        0.945,
+        f"{title_start} — {total_cost_str}",
+        ha="center",
+        va="top",
+        fontsize=10,
+        transform=fig.transFigure,
+    )
     if save_as is not None:
         plt.savefig(save_as, dpi=130)
     if show:
