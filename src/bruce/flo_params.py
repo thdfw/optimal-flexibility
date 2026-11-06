@@ -1,7 +1,7 @@
-"""Turn one journaled ``flo.params`` payload into the heat-pump graph plot.
+"""Turn one journaled ``flo.params`` payload into the heat-pump graph.
 
 The payload is the PascalCase object the journal stores. Tuning must be
-``flo.tuning.bruce``. The plot is written to disk with the GUI backend off.
+``flo.tuning.bruce``.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from bruce.graph_optimizer import Graph
 from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankAsset,
     HeatPumpWaterTankParams,
+    graph_plot_data,
     plot_graph_results,
 )
 from bruce.service import thermocline_layer
@@ -266,6 +267,22 @@ def _use_headless_matplotlib() -> None:
     import matplotlib
 
     matplotlib.use("Agg", force=True)
+
+
+def flo_plot_data(payload: dict[str, Any]) -> dict[str, Any]:
+    """Solve the heat-pump graph for ``payload`` and return the plot series."""
+    params = heat_pump_params_from_flo(payload)
+    asset = HeatPumpWaterTankAsset(params)
+    graph: Graph[Any, Any, Any] = Graph(asset)
+    try:
+        graph.find_shortest_path()
+        return graph_plot_data(graph)
+    finally:
+        with suppress(Exception):
+            graph.cleanup()
+        del graph
+        del asset
+        gc.collect()
 
 
 def render_flo_params_png(payload: dict[str, Any], save_as: str | Path) -> None:

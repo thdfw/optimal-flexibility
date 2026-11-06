@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from bruce.graph_optimizer.graph import Edge, Graph, Node
@@ -56,6 +57,225 @@ def _hp_heat_out_kwh(
 ) -> float:
     cop = asset.params.COP(asset.params.oat_f[time_step])
     return asset.elec_used_kwh(state, action, time_step) * cop
+
+
+def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
+    """Series for the three-panel heat-pump plot. Times are America/New_York wall clocks."""
+    import matplotlib
+    from matplotlib.colors import Normalize, to_rgba
+
+    asset = _graph_asset(graph)
+    params = asset.params
+    initial_node = _initial_node(graph)
+    step_starts = _step_start_datetimes(params)
+    sp_time: list[datetime] = step_starts
+
+    sp_top_temp: list[float] = []
+    sp_middle_temp: list[float] = []
+    sp_bottom_temp: list[float] = []
+    sp_thermocline1: list[int] = []
+    sp_thermocline2: list[int] = []
+    sp_hp_heat_out_kw: list[float] = []
+    sp_stored_energy: list[float] = []
+    sp_rswt_penalty: list[float] = []
+    sp_stability_penalty: list[float] = []
+    sp_short_cycle_penalty: list[float] = []
+
+    node: Node[HeatPumpWaterTankState] | None = initial_node
+    last_edge: Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction] | None = None
+    the_end = False
+
+    while not the_end:
+        assert node is not None
+        if node.next_node is None:
+            the_end = True
+            if last_edge is not None:
+                t = last_edge.tail.time_step
+                dt = params.timestep_duration_hours[t]
+                sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
+            sp_rswt_penalty.append(0.0)
+            sp_stability_penalty.append(0.0)
+            sp_short_cycle_penalty.append(0.0)
+        else:
+            edge = _edge_for_transition(graph, node)
+            if edge is None:
+                raise RuntimeError(f"No edge found from {node} to {node.next_node}")
+            last_edge = edge
+            t = node.time_step
+            dt = params.timestep_duration_hours[t]
+            cop = params.COP(params.oat_f[t])
+            heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
+            sp_hp_heat_out_kw.append(heat_out / dt)
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, edge.head.state, edge.action, t))
+            sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
+            sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
+
+        st = node.state
+        sp_top_temp.append(st.top_temp)
+        sp_middle_temp.append(st.middle_temp)
+        sp_bottom_temp.append(st.bottom_temp)
+        sp_thermocline1.append(st.thermocline1)
+        sp_thermocline2.append(st.thermocline2)
+        sp_stored_energy.append(st.energy)
+        node = node.next_node
+
+    sp_soc = [
+        (e - asset.min_state_energy) / (asset.max_state_energy - asset.min_state_energy) * 100
+        for e in sp_stored_energy
+    ]
+    terminal_node = initial_node
+    while terminal_node.next_node is not None:
+        terminal_node = terminal_node.next_node
+    terminal_cost = asset.terminal_node_cost(terminal_node.state)
+    terminal_cost_full = asset.terminal_cost_full()
+    terminal_cost_pct = (
+        100.0 * terminal_cost / terminal_cost_full if terminal_cost_full > 0 else 0.0
+    )
+
+    load_kw = [float(v) for v in (
+        params.load_kwh[t] / params.timestep_duration_hours[t] for t in range(params.horizon)
+    )]
+    prices = [float(v) for v in params.elec_price_mwh]
+    # Repeat the last step so a post-step line covers the final interval.
+    if load_kw:
+        load_kw.append(load_kw[-1])
+    if prices:
+        prices.append(prices[-1])
+
+    norm = Normalize(vmin=60, vmax=180)
+    cmap = matplotlib.colormaps["Reds"]
+
+    def temp_rgba(temp: float) -> str:
+        r, g, b, _ = to_rgba(cmap(float(norm(temp))))
+        return f"rgba({round(r * 255)},{round(g * 255)},{round(b * 255)},0.7)"
+
+    def text_color(temp: float, i: int) -> str:
+        rswt = params.rswt_f[i] if i < len(params.rswt_f) else None
+        if rswt is not None and rswt <= temp:
+            return "green"
+        if temp < 100:
+            return "gray"
+        return "white"
+
+    def layer(
+        heights: list[float],
+        bases: list[float],
+        temps: list[float],
+        show_text: list[bool],
+    ) -> dict[str, Any]:
+        return {
+            "y": [float(h) for h in heights],
+            "base": [float(b) for b in bases],
+            "color": [temp_rgba(float(t)) for t in temps],
+            "text": [str(int(t)) if show else "" for t, show in zip(temps, show_text, strict=True)],
+            "textColor": [text_color(float(t), i) for i, t in enumerate(temps)],
+            "temp": [float(t) for t in temps],
+        }
+
+    n = params.num_layers
+    top_h = [float(x) for x in sp_thermocline1]
+    mid_h = [float(b - a) for a, b in zip(sp_thermocline1, sp_thermocline2, strict=True)]
+    bot_h = [float(n - x) for x in sp_thermocline2]
+    top_base = [float(n - x) for x in sp_thermocline1]
+    mid_base = [float(n - x) for x in sp_thermocline2]
+    bot_base = [0.0] * len(sp_time)
+    width_ms = [
+        params.timestep_duration_hours[min(t, params.horizon - 1)] * 0.9 * 3_600_000
+        for t in range(len(sp_time))
+    ]
+
+    rswt_vals = [float(v) for v in sp_rswt_penalty[:-1]]
+    stab_vals = [float(v) for v in sp_stability_penalty[:-1]]
+    short_vals = [float(v) for v in sp_short_cycle_penalty[:-1]]
+    sp_time_mid = [
+        step_starts[t] + timedelta(hours=params.timestep_duration_hours[t] / 2.0)
+        for t in range(params.horizon)
+    ]
+    terminal_vals = [0.0] * len(sp_time_mid)
+    if terminal_vals and params.terminal_cost_enabled:
+        terminal_vals[-1] = float(terminal_cost)
+
+    penalty_series: list[dict[str, Any]] = []
+    stack = [0.0] * len(sp_time_mid)
+
+    def push_penalty(name: str, color: str, values: list[float]) -> None:
+        nonlocal stack
+        penalty_series.append({
+            "name": name,
+            "color": color,
+            "y": values,
+            "base": list(stack),
+        })
+        stack = [b + v for b, v in zip(stack, values, strict=True)]
+
+    if params.rswt_penalty_enabled:
+        push_penalty("RSWT penalty", "rgba(255,127,14,0.7)", rswt_vals)
+    if params.stability_penalty_enabled:
+        push_penalty("Stability penalty", "rgba(148,103,189,0.7)", stab_vals)
+    if params.short_cycle_penalty_enabled:
+        push_penalty("Short-cycle penalty", "rgba(23,190,207,0.7)", short_vals)
+    if params.terminal_cost_enabled:
+        push_penalty(
+            f"Terminal cost ({terminal_cost_pct:.0f}% of max)",
+            "rgba(44,160,44,0.7)",
+            terminal_vals,
+        )
+
+    per_series_max: list[float] = []
+    if params.rswt_penalty_enabled:
+        per_series_max.append(max(rswt_vals, default=0.0))
+    if params.stability_penalty_enabled:
+        per_series_max.append(max(stab_vals, default=0.0))
+    if params.short_cycle_penalty_enabled:
+        per_series_max.append(max(short_vals, default=0.0))
+    if params.terminal_cost_enabled:
+        per_series_max.append(float(terminal_cost))
+    max_stack = 0.0
+    for i in range(len(sp_time_mid)):
+        total = 0.0
+        if params.rswt_penalty_enabled:
+            total += rswt_vals[i]
+        if params.stability_penalty_enabled:
+            total += stab_vals[i]
+        if params.short_cycle_penalty_enabled:
+            total += short_vals[i]
+        if params.terminal_cost_enabled:
+            total += terminal_vals[i]
+        max_stack = max(max_stack, total)
+    max_penalty = max(max(per_series_max, default=0.0), max_stack)
+    hp_max = max(sp_hp_heat_out_kw, default=0.0)
+
+    def iso(dt: datetime) -> str:
+        return dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+    return {
+        "siteId": params.site_id,
+        "subtitle": f"{step_starts[0].strftime('%b %d, %Y %H:%M %Z')} — ${round(float(initial_node.pathcost), 2)}",
+        "numLayers": n,
+        "power": {
+            "time": [iso(t) for t in sp_time],
+            "hpKw": [float(v) for v in sp_hp_heat_out_kw],
+            "loadKw": load_kw,
+            "priceUsdMwh": prices,
+            "yRange": [-0.5, 1.5 * hp_max] if hp_max > 0 else None,
+        },
+        "storage": {
+            "time": [iso(t) for t in sp_time],
+            "widthMs": width_ms,
+            "layers": [
+                layer(bot_h, bot_base, sp_bottom_temp, [x != n for x in sp_thermocline2]),
+                layer(mid_h, mid_base, sp_middle_temp, [h > 1 for h in mid_h]),
+                layer(top_h, top_base, sp_top_temp, [True] * len(sp_time)),
+            ],
+            "soc": [float(v) for v in sp_soc],
+        },
+        "penalty": {
+            "time": [iso(t) for t in sp_time_mid],
+            "widthMs": [h * 0.9 * 3_600_000 for h in params.timestep_duration_hours],
+            "series": penalty_series,
+            "yRange": [0, max_penalty * 1.3] if max_penalty > 0 else None,
+        },
+    }
 
 
 def plot_graph_results(
