@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from bruce.graph_optimizer.graph import Edge, Graph, Node
+
+# Forecast wall times and plot titles use Eastern Time (handles DST).
+_AMERICA_NEW_YORK = ZoneInfo("America/New_York")
 
 from .action import HeatPumpWaterTankAction
 from .asset import HeatPumpWaterTankAsset
@@ -36,8 +40,8 @@ def _edge_for_transition(
 
 
 def _step_start_datetimes(params: HeatPumpWaterTankParams) -> list[datetime]:
-    """Wall-clock start of each step (index 0 .. horizon); last is end of final step."""
-    t0 = datetime.fromtimestamp(params.start_unix_s)
+    """Wall-clock start of each step in America/New_York; last is end of final step."""
+    t0 = datetime.fromtimestamp(params.start_unix_s, tz=_AMERICA_NEW_YORK)
     out: list[datetime] = [t0]
     for dt_h in params.timestep_duration_hours:
         out.append(out[-1] + timedelta(hours=dt_h))
@@ -143,7 +147,7 @@ def plot_graph_results(
     prices = params.elec_price_mwh
 
     start_dt = step_starts[0]
-    title_start = start_dt.strftime("%b %d, %Y %H:%M")
+    title_start = start_dt.strftime("%b %d, %Y %H:%M %Z")
     total_cost_str = f"${round(initial_node.pathcost, 2)}"
     fig, ax = plt.subplots(3, 1, sharex=True, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
 
@@ -313,7 +317,7 @@ def plot_graph_results(
             label=f"Terminal cost ({terminal_cost_pct:.0f}% of max)",
         )
 
-    ax[2].set_xlabel("Time (local)")
+    ax[2].set_xlabel("Time (America/New_York)")
     ax[2].set_ylabel("Penalty [$]")
     ax[2].legend(loc="upper right", fontsize=8)
 
@@ -345,9 +349,8 @@ def plot_graph_results(
         ax[2].set_ylim([0, max_penalty * 1.3])
 
     for a in ax:
-        a.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        a.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=_AMERICA_NEW_YORK))
         a.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.setp(ax[2].xaxis.get_majorticklabels(), rotation=25, ha="right")
     plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
     fig.text(
         0.5,
