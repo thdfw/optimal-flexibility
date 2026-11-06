@@ -19,6 +19,7 @@ from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankParams,
     plot_graph_results,
 )
+from bruce.service import thermocline_layer
 
 
 class FloParamsError(ValueError):
@@ -188,6 +189,7 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
         raise FloParamsError(str(e)) from e
 
     tuning = flo.Tuning
+    sensors = flo.TanksModeled * flo.TempSensorsPerTank
     step_minutes = [float(m) for m in flo.StepDurationMinutes]
     horizon = len(step_minutes)
     previous_plan: list[float] | None = None
@@ -247,13 +249,16 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
         initial_top_temp=flo.InitialTopTempF,
         initial_middle_temp=flo.InitialMiddleTempF,
         initial_bottom_temp=flo.InitialBottomTempF,
-        initial_thermocline1=flo.InitialThermocline1,
-        initial_thermocline2=flo.InitialThermocline2,
+        initial_thermocline1=thermocline_layer(
+            flo.InitialThermocline1, sensors, tuning.NumLayers
+        ),
+        initial_thermocline2=thermocline_layer(
+            flo.InitialThermocline2, sensors, tuning.NumLayers
+        ),
         rswt_f=list(flo.RswtFList),
         load_kwh=list(flo.LoadKwhList),
         oat_f=list(flo.OatFList),
         num_layers=tuning.NumLayers,
-        temp_sensors_per_tank=flo.TempSensorsPerTank,
     )
 
 
