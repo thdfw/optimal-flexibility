@@ -1,0 +1,54 @@
+metadata:
+  generated_from: indexes/public_registry.yaml
+  generated_at: '2026-11-02T17:59:03Z'
+  note: Transitive closure of initial_targets
+initial_targets:
+- flo.params:001
+- flo.recommendation:000
+worklist:
+  formats:
+    git.commit:
+      path: definitions/formats/git.commit.yaml
+    left.right.dot:
+      path: definitions/formats/left.right.dot.yaml
+    non.empty.string:
+      path: definitions/formats/non.empty.string.yaml
+    non.negative.int:
+      path: definitions/formats/non.negative.int.yaml
+    positive.int:
+      path: definitions/formats/positive.int.yaml
+    utc.milliseconds:
+      path: definitions/formats/utc.milliseconds.yaml
+    utc.seconds:
+      path: definitions/formats/utc.seconds.yaml
+    uuid4.str:
+      path: definitions/formats/uuid4.str.yaml
+  enums:
+    gw1.seasonal.storage.mode:
+      '000':
+        path: definitions/enums/gw1.seasonal.storage.mode/000.yaml
+    market.price.unit:
+      '000':
+        path: definitions/enums/market.price.unit/000.yaml
+    market.quantity.unit:
+      '000':
+        path: definitions/enums/market.quantity.unit/000.yaml
+  types:
+    flo.optimal.path:
+      '000':
+        path: definitions/types/flo.optimal.path/000.yaml
+    flo.params:
+      '001':
+        path: definitions/types/flo.params/001.yaml
+    flo.recommendation:
+      '000':
+        path: definitions/types/flo.recommendation/000.yaml
+    flo.tuning.alice:
+      '000':
+        path: definitions/types/flo.tuning.alice/000.yaml
+    flo.tuning.bruce:
+      '001':
+        path: definitions/types/flo.tuning.bruce/001.yaml
+    price.quantity.unitless:
+      '001':
+        path: definitions/types/price.quantity.unitless/001.yaml

@@ -20,3 +20,8 @@ packages = ["src/bruce"]
 extraPaths = ["src"]
 venvPath = "."
 venv = ".venv"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

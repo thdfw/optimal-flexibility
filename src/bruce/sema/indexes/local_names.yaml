@@ -1,0 +1,11 @@
+enums:
+  gw1.seasonal.storage.mode: seasonal.storage.mode
+  market.price.unit: market.price.unit
+  market.quantity.unit: market.quantity.unit
+types:
+  flo.optimal.path: flo.optimal.path
+  flo.params: flo.params
+  flo.recommendation: flo.recommendation
+  flo.tuning.alice: flo.tuning.alice
+  flo.tuning.bruce: flo.tuning.bruce
+  price.quantity.unitless: price.quantity.unitless
