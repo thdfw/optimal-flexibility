@@ -59,6 +59,15 @@ def _hp_heat_out_kwh(
     return asset.elec_used_kwh(state, action, time_step) * cop
 
 
+def _thermal_and_normalized_prices(params: HeatPumpWaterTankParams) -> tuple[list[float], list[float]]:
+    """Per-step price of heat ($/MWh_th) and the electricity price divided by the horizon's mean COP."""
+    cops = [params.COP(oat) for oat in params.oat_f]
+    mean_cop = sum(cops) / len(cops)
+    thermal = [float(p / cop) for p, cop in zip(params.elec_price_mwh, cops, strict=True)]
+    normalized = [float(p / mean_cop) for p in params.elec_price_mwh]
+    return thermal, normalized
+
+
 def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     """Series for the three-panel heat-pump plot. Times are America/New_York wall clocks."""
     import matplotlib
@@ -136,11 +145,14 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
         params.load_kwh[t] / params.timestep_duration_hours[t] for t in range(params.horizon)
     )]
     prices = [float(v) for v in params.elec_price_mwh]
+    thermal_prices, normalized_prices = _thermal_and_normalized_prices(params)
     # Repeat the last step so a post-step line covers the final interval.
     if load_kw:
         load_kw.append(load_kw[-1])
     if prices:
         prices.append(prices[-1])
+        thermal_prices.append(thermal_prices[-1])
+        normalized_prices.append(normalized_prices[-1])
 
     norm = Normalize(vmin=60, vmax=180)
     cmap = matplotlib.colormaps["Reds"]
@@ -257,6 +269,8 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
             "hpKw": [float(v) for v in sp_hp_heat_out_kw],
             "loadKw": load_kw,
             "priceUsdMwh": prices,
+            "priceNormalizedUsdMwh": normalized_prices,
+            "thermalPriceUsdMwh": thermal_prices,
             "yRange": [-0.5, 1.5 * hp_max] if hp_max > 0 else None,
         },
         "storage": {
@@ -364,7 +378,7 @@ def plot_graph_results(
         params.load_kwh[t] / params.timestep_duration_hours[t]
         for t in range(params.horizon)
     ]
-    prices = params.elec_price_mwh
+    thermal_prices, normalized_prices = _thermal_and_normalized_prices(params)
 
     start_dt = step_starts[0]
     title_start = start_dt.strftime("%b %d, %Y %H:%M %Z")
@@ -378,9 +392,18 @@ def plot_graph_results(
     if max(sp_hp_heat_out_kw) > 0:
         ax[0].set_ylim([-0.5, 1.5 * max(sp_hp_heat_out_kw)])
     ax0_price = ax[0].twinx()
-    ax0_price.step(sp_time[:-1], prices, where="post", color="gray", alpha=0.6, label="Electricity price")
+    ax0_price.step(sp_time[:-1], thermal_prices, where="post", color="gray", alpha=0.6, label="Thermal price")
+    ax0_price.step(
+        sp_time[:-1],
+        normalized_prices,
+        where="post",
+        color="gray",
+        alpha=0.6,
+        linestyle="--",
+        label="Electricity price (normalized)",
+    )
     ax0_price.legend(loc="upper right")
-    ax0_price.set_ylabel("Electricity price [$/MWh]")
+    ax0_price.set_ylabel("Thermal price [$/MWh_th]")
 
     norm = Normalize(vmin=60, vmax=180)
     cmap = matplotlib.colormaps["Reds"]
