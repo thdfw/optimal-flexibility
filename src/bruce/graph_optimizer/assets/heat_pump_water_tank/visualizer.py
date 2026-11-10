@@ -28,16 +28,15 @@ def _initial_node(graph: HpGraph) -> Node[HeatPumpWaterTankState]:
     return graph.find_initial_node()
 
 
-def _edge_for_transition(
+def _path_nodes_and_edges(
     graph: HpGraph,
-    node: Node[HeatPumpWaterTankState],
-) -> Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction] | None:
-    if node.next_node is None:
-        return None
-    for edge in graph.edges[node]:
-        if edge.head is node.next_node:
-            return edge
-    return None
+    initial_node: Node[HeatPumpWaterTankState],
+) -> tuple[list[Node[HeatPumpWaterTankState]], list[Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction]]]:
+    """The planned nodes (initial through terminal) and the edge leaving each but the last."""
+    if initial_node.best_edge is None:
+        return [initial_node], []
+    steps = graph.rollout(initial_node.best_edge)
+    return [initial_node] + [head for _, head in steps], [edge for edge, _ in steps]
 
 
 def _step_start_datetimes(params: HeatPumpWaterTankParams) -> list[datetime]:
@@ -90,15 +89,12 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     sp_stability_penalty: list[float] = []
     sp_short_cycle_penalty: list[float] = []
 
-    node: Node[HeatPumpWaterTankState] | None = initial_node
-    last_edge: Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction] | None = None
-    the_end = False
+    path_nodes, path_edges = _path_nodes_and_edges(graph, initial_node)
 
-    while not the_end:
-        assert node is not None
-        if node.next_node is None:
-            the_end = True
-            if last_edge is not None:
+    for i, node in enumerate(path_nodes):
+        if i == len(path_edges):
+            if path_edges:
+                last_edge = path_edges[-1]
                 t = last_edge.tail.time_step
                 dt = params.timestep_duration_hours[t]
                 sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
@@ -106,16 +102,13 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
             sp_stability_penalty.append(0.0)
             sp_short_cycle_penalty.append(0.0)
         else:
-            edge = _edge_for_transition(graph, node)
-            if edge is None:
-                raise RuntimeError(f"No edge found from {node} to {node.next_node}")
-            last_edge = edge
+            edge = path_edges[i]
             t = node.time_step
             dt = params.timestep_duration_hours[t]
             cop = params.COP(params.oat_f[t])
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
-            sp_rswt_penalty.append(asset.rswt_penalty(node.state, edge.head.state, edge.action, t))
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
             sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
 
@@ -126,15 +119,12 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
         sp_thermocline1.append(st.thermocline1)
         sp_thermocline2.append(st.thermocline2)
         sp_stored_energy.append(st.energy)
-        node = node.next_node
 
     sp_soc = [
         (e - asset.min_state_energy) / (asset.max_state_energy - asset.min_state_energy) * 100
         for e in sp_stored_energy
     ]
-    terminal_node = initial_node
-    while terminal_node.next_node is not None:
-        terminal_node = terminal_node.next_node
+    terminal_node = path_nodes[-1]
     terminal_cost = asset.terminal_node_cost(terminal_node.state)
     terminal_cost_full = asset.terminal_cost_full()
     terminal_cost_pct = (
@@ -323,15 +313,12 @@ def plot_graph_results(
     sp_stability_penalty: list[float] = []
     sp_short_cycle_penalty: list[float] = []
 
-    node: Node[HeatPumpWaterTankState] | None = initial_node
-    last_edge: Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction] | None = None
-    the_end = False
+    path_nodes, path_edges = _path_nodes_and_edges(graph, initial_node)
 
-    while not the_end:
-        assert node is not None
-        if node.next_node is None:
-            the_end = True
-            if last_edge is not None:
+    for i, node in enumerate(path_nodes):
+        if i == len(path_edges):
+            if path_edges:
+                last_edge = path_edges[-1]
                 t = last_edge.tail.time_step
                 dt = params.timestep_duration_hours[t]
                 sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
@@ -339,16 +326,13 @@ def plot_graph_results(
             sp_stability_penalty.append(0.0)
             sp_short_cycle_penalty.append(0.0)
         else:
-            edge = _edge_for_transition(graph, node)
-            if edge is None:
-                raise RuntimeError(f"No edge found from {node} to {node.next_node}")
-            last_edge = edge
+            edge = path_edges[i]
             t = node.time_step
             dt = params.timestep_duration_hours[t]
             cop = params.COP(params.oat_f[t])
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
-            sp_rswt_penalty.append(asset.rswt_penalty(node.state, edge.head.state, edge.action, t))
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
             sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
 
@@ -359,15 +343,12 @@ def plot_graph_results(
         sp_thermocline1.append(st.thermocline1)
         sp_thermocline2.append(st.thermocline2)
         sp_stored_energy.append(st.energy)
-        node = node.next_node
 
     sp_soc = [
         (e - asset.min_state_energy) / (asset.max_state_energy - asset.min_state_energy) * 100
         for e in sp_stored_energy
     ]
-    terminal_node = initial_node
-    while terminal_node.next_node is not None:
-        terminal_node = terminal_node.next_node
+    terminal_node = path_nodes[-1]
     terminal_cost = asset.terminal_node_cost(terminal_node.state)
     terminal_cost_full = asset.terminal_cost_full()
     terminal_cost_pct = (

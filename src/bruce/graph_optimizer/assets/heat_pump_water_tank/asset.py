@@ -19,6 +19,8 @@ from .transition_matrix_params import HeatPumpWaterTankTransitionMatrixParams
 if TYPE_CHECKING:
     from .model import HeatPumpWaterTankModel
 
+OTHER_SIDE_MAX_WINDOW_KWH = 2.0
+
 
 class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankAction, HeatPumpWaterTankParams]):
 
@@ -426,6 +428,62 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 -candidate.top_temp,
             ),
         )
+
+    def successors(
+        self,
+        state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        transition_variant: int = 0,
+    ) -> list[tuple[HeatPumpWaterTankState, float]]:
+        """The closest state and a state on the other side of the predicted energy, weighted so
+        that their average energy is the predicted energy (see docs/two-node-transitions.md)."""
+        predicted = self.next_state(state, action, transition_variant=transition_variant)
+        closest = self.closest_state(predicted, from_state=state, action=action)
+        target = state.energy + action.heat_to_store_kwh
+        if abs(closest.energy - target) < 1e-6:
+            return [(closest, 1.0)]
+        other = self._other_side_state(predicted, target, closest.energy < target, state, action)
+        if other is None:
+            return [(closest, 1.0)]
+        lower, upper = (closest, other) if closest.energy < target else (other, closest)
+        upper_weight = (target - lower.energy) / (upper.energy - lower.energy)
+        return [(lower, 1 - upper_weight), (upper, upper_weight)]
+
+    def _other_side_state(
+        self,
+        predicted: HeatPumpWaterTankState,
+        target: float,
+        above: bool,
+        from_state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+    ) -> HeatPumpWaterTankState | None:
+        """The state above (or below) ``target`` energy that is closest to ``predicted``, searching
+        in growing 0.5 kWh windows as ``closest_state`` does. Charging never goes above full, and
+        discharging never ends with more energy than it started with."""
+        if above:
+            max_energy = target + OTHER_SIDE_MAX_WINDOW_KWH
+            if action.heat_to_store_kwh > 0:
+                max_energy = min(max_energy, self.max_state_energy)
+            elif action.heat_to_store_kwh < 0:
+                max_energy = min(max_energy, from_state.energy)
+            candidates = [c for c in self.state_space if target < c.energy <= max_energy]
+        else:
+            min_energy = target - OTHER_SIDE_MAX_WINDOW_KWH
+            candidates = [c for c in self.state_space if min_energy <= c.energy < target]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda candidate: (
+                math.ceil(abs(candidate.energy - target) / 0.5),
+                self.state_distance(predicted, candidate),
+                abs(candidate.energy - target),
+                -candidate.top_temp,
+            ),
+        )
+
+    def rollout_quantity(self, state: HeatPumpWaterTankState) -> float:
+        return state.energy
 
     def cost(
         self,

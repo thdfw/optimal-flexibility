@@ -107,7 +107,7 @@ class TransitionMatrixParams(BaseModel, ABC):
         return hashlib.sha256(payload).hexdigest()[:8]
 
     def cache_filename(self, asset_name: str) -> str:
-        return f"{asset_name}_{self.hash}.matrix.npz"
+        return f"{asset_name}_{self.hash}.successors.matrix.npz"
 
 
 class Model(ABC, Generic[S, A, P]):
@@ -168,6 +168,15 @@ class Asset(ABC, Generic[S, A, P]):
 
     def closest_state(self, state: S, from_state: S | None = None, action: A | None = None) -> S:
         return min(self.state_space, key=lambda candidate: self.state_distance(state, candidate))
+
+    def successors(self, state: S, action: A, transition_variant: int = 0) -> list[tuple[S, float]]:
+        """Grid states the transition leads to and their weights, which sum to 1."""
+        predicted = self.next_state(state, action, transition_variant=transition_variant)
+        return [(self.closest_state(predicted, from_state=state, action=action), 1.0)]
+
+    def rollout_quantity(self, state: S) -> float | None:
+        """The quantity the successor weights preserve, or None to follow the heaviest successor."""
+        return None
 
     @abstractmethod
     def state_distance(self, state1: S, state2: S) -> float:

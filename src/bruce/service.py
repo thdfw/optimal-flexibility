@@ -27,7 +27,7 @@ from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankAsset,
     HeatPumpWaterTankParams,
 )
-from bruce.graph_optimizer.graph import Edge, Node
+from bruce.graph_optimizer.graph import Edge
 from bruce.sema.enums import MarketPriceUnit, MarketQuantityUnit
 from bruce.sema.types import (
     FloOptimalPath,
@@ -166,28 +166,17 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
     )
 
 
-def edge_to(graph: Graph, tail: Node, head: Node) -> Edge:
-    for edge in graph.edges.get(tail, []):
-        if edge.head is head:
-            return edge
-    raise RuntimeError(f"no edge from {tail} to {head}")
-
-
 def path_from(graph: Graph, request: FloParams, first: Edge) -> FloOptimalPath:
     """The plan the first-step edge leads to: that edge, then the shortest
-    path onward from its head, as average watts and end-of-step store
+    path onward (``Graph.rollout``), as average watts and end-of-step store
     watt-hours per step. Axiom 1 of flo.optimal.path: the three lists
     share a length, which is the number of steps the path reaches."""
     hours = [m / 60 for m in request.step_duration_minutes]
     hp_avg_w: list[int] = []
     store_wh: list[int] = []
-    edge = first
-    for h in hours:
+    for h, (edge, head) in zip(hours, graph.rollout(first, max_steps=len(hours))):
         hp_avg_w.append(round(edge.elec_used_kwh / h * 1000))
-        store_wh.append(round(float(edge.head.state.energy) * 1000))
-        if edge.head.next_node is None:
-            break
-        edge = edge_to(graph, edge.head, edge.head.next_node)
+        store_wh.append(round(float(head.state.energy) * 1000))
     n = len(hp_avg_w)
     return FloOptimalPath(
         start_unix_s=request.start_unix_s,
@@ -210,11 +199,7 @@ def recommend(request: FloParams) -> FloRecommendation:
     paths: list[FloOptimalPath] = []
     for i, pair in enumerate(pairs):
         price_mwh = request.price_max_usd_mwh if i == 0 else pair.price_mwh
-        graph.get_next_node_at_price(pair.price_mwh)
-        initial = graph.initial_node
-        if initial is None or initial.next_node is None:
-            raise RuntimeError("no next node at bid price")
-        first = edge_to(graph, initial, initial.next_node)
+        first = graph.best_edge_at_price(pair.price_mwh)
         path = path_from(graph, request, first)
         pq_pairs.append(
             PriceQuantityUnitless(
