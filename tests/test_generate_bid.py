@@ -29,9 +29,9 @@ def graph() -> Graph:
         rswt_f=[120.0] * HORIZON,
         load_kwh=[6.0] * HORIZON,
         oat_f=[20.0] * HORIZON,
-        initial_top_temp=120,
-        initial_middle_temp=110,
-        initial_bottom_temp=100,
+        initial_top_temp=130,
+        initial_middle_temp=120,
+        initial_bottom_temp=110,
         initial_thermocline1=3,
         initial_thermocline2=6,
     )
