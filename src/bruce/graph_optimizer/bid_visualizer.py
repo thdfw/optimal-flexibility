@@ -106,7 +106,39 @@ def plot_bid(
     yticks = list(prices_mwh)
     if all(abs(p - bid_min_price_mwh) > 0.01 for p in yticks):
         yticks.append(bid_min_price_mwh)
+
+    # Ceiling and floor are market bounds, often far from the bid. Crop each end
+    # at the nearest supply line or other PQ price, with room to still see the
+    # quantity that holds beyond that point.
+    ceiling_mwh = prices_mwh[0]
+    floor_mwh = bid_min_price_mwh
+    supplies = [forecast_price_mwh]
+    if real_price_mwh is not None:
+        supplies.append(real_price_mwh)
+    below_ceiling = [p for p in [*prices_mwh[1:], *supplies] if p < ceiling_mwh - 0.01]
+    above_floor = [p for p in [prices_mwh[-1], *supplies] if p > floor_mwh + 0.01]
+    top_feature = max(below_ceiling) if below_ceiling else None
+    bottom_feature = min(above_floor) if above_floor else None
+    span = max(
+        (top_feature if top_feature is not None else ceiling_mwh)
+        - (bottom_feature if bottom_feature is not None else floor_mwh),
+        1.0,
+    )
+    margin = max(0.45 * span, 60.0)
+    pad = 0.04 * span
+    y_top = (
+        top_feature + margin
+        if top_feature is not None and ceiling_mwh > top_feature + margin
+        else ceiling_mwh + pad
+    )
+    y_bottom = (
+        bottom_feature - margin
+        if bottom_feature is not None and floor_mwh < bottom_feature - margin
+        else floor_mwh - pad
+    )
+    yticks = [p for p in yticks if y_bottom <= p <= y_top]
     plt.yticks(sorted(yticks, reverse=True))
+    plt.ylim(y_bottom, y_top)
     plt.ylabel("Price [/MWh]")
     plt.xlabel("Quantity [kWh]")
     plt.grid(alpha=0.3)
