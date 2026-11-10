@@ -45,7 +45,7 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_decay_max_hour: int = 12
 
     # Short-cycle penalty (from-off fill-to-full below this step's max power)
-    short_cycle_penalty_enabled: bool = True
+    short_cycle_penalty_enabled: bool = False
     short_cycle_penalty_weight: float = 6.0
 
     # Plan stability penalty
