@@ -13,7 +13,7 @@ from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from bruce.graph_optimizer import Graph
+from bruce.graph_optimizer import Graph, PriceQuantityPair, bid_plot_data
 from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankAsset,
     HeatPumpWaterTankParams,
@@ -270,19 +270,62 @@ def _use_headless_matplotlib() -> None:
 
 
 def flo_plot_data(payload: dict[str, Any]) -> dict[str, Any]:
-    """Solve the heat-pump graph for ``payload`` and return the plot series."""
+    """Solve the heat-pump graph for ``payload``.
+
+    Returns the summary plot series under ``summary`` and the first-hour bid
+    under ``bid``. Pass ``bid`` to ``flo_bid_plot_data`` for the bid plot series.
+    """
     params = heat_pump_params_from_flo(payload)
     asset = HeatPumpWaterTankAsset(params)
     graph: Graph[Any, Any, Any] = Graph(asset)
     try:
         graph.find_shortest_path()
-        return graph_plot_data(graph)
+        # generate_bid resets the initial node's best edge, so read the plan first.
+        summary = graph_plot_data(graph)
+        forecast_price_mwh = float(params.elec_price_mwh[0])
+        pq_pairs = graph.generate_bid(forecast_price_mwh=forecast_price_mwh)
+        return {
+            "summary": summary,
+            "bid": {
+                "pqPairs": [
+                    {"priceMwh": float(p.price_mwh), "quantityKwh": float(p.quantity_kwh)}
+                    for p in pq_pairs
+                ],
+                "forecastPriceMwh": forecast_price_mwh,
+                "bidMinPriceMwh": float(params.bid_min_price_mwh),
+                "maxQuantityKwh": float(
+                    params.hp_max_kw_elec * params.timestep_duration_hours[0] * 1.1
+                ),
+                "hpMaxQuantityKwh": float(
+                    params.hp_max_kw_elec * params.timestep_duration_hours[0]
+                ),
+            },
+        }
     finally:
         with suppress(Exception):
             graph.cleanup()
         del graph
         del asset
         gc.collect()
+
+
+def flo_bid_plot_data(bid: dict[str, Any], real_price_mwh: float | None = None) -> dict[str, Any]:
+    """Bid plot series for the ``bid`` part of ``flo_plot_data``."""
+    pq_pairs = [
+        PriceQuantityPair(price_mwh=float(p["priceMwh"]), quantity_kwh=float(p["quantityKwh"]))
+        for p in bid["pqPairs"]
+    ]
+    hp_max_quantity_kwh = bid.get("hpMaxQuantityKwh")
+    if hp_max_quantity_kwh is None:
+        hp_max_quantity_kwh = float(bid["maxQuantityKwh"]) / 1.1
+    return bid_plot_data(
+        pq_pairs,
+        float(bid["forecastPriceMwh"]),
+        float(bid["bidMinPriceMwh"]),
+        max_quantity_kwh=float(bid["maxQuantityKwh"]),
+        hp_max_quantity_kwh=float(hp_max_quantity_kwh),
+        real_price_mwh=real_price_mwh,
+    )
 
 
 def render_flo_params_png(payload: dict[str, Any], save_as: str | Path) -> None:
