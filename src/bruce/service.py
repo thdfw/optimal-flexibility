@@ -5,7 +5,8 @@
 heat-pump-and-tank asset and its graph, solves, and answers with a
 ``flo.recommendation`` that is complete over prices: one PQ pair per
 quantity change from the market ceiling down, and beside each pair the
-plan its edge leads to. The real-time price is never seen here; the
+plan its edge leads to, the tank store along that plan with its empty and
+full energies, and the penalties and total cost bruce charged along it. The real-time price is never seen here; the
 caller picks the cleared pair off the recommendation it holds.
 
 The graph is built and discarded per call. Nothing spans calls except the
@@ -21,18 +22,22 @@ import subprocess
 import time
 from importlib import metadata
 from pathlib import Path
+from typing import NamedTuple
 
 from bruce.graph_optimizer import Graph
 from bruce.graph_optimizer.assets.heat_pump_water_tank import (
     HeatPumpWaterTankAsset,
     HeatPumpWaterTankParams,
 )
+from bruce.graph_optimizer.assets.heat_pump_water_tank.state import compute_energy
 from bruce.graph_optimizer.graph import Edge
 from bruce.sema.enums import MarketPriceUnit, MarketQuantityUnit
 from bruce.sema.types import (
     FloOptimalPath,
     FloParams,
+    FloPathPenaltiesBruce,
     FloRecommendation,
+    FloTankStorePath,
     FloTuningBruce,
     PriceQuantityUnitless,
 )
@@ -40,6 +45,7 @@ from bruce.sema.types import (
 FLO_NAME = "bruce"
 FLO_REPO = "github.com/thdfw/optimal-flexibility"
 UNKNOWN_COMMIT = "0" * 40
+EMPTY_STORE_TEMP_F = 70
 
 
 def bruce_git_commit() -> str:
@@ -166,23 +172,90 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
     )
 
 
-def path_from(graph: Graph, request: FloParams, first: Edge) -> FloOptimalPath:
-    """The plan the first-step edge leads to: that edge, then the shortest
-    path onward (``Graph.rollout``), as average watts and end-of-step store
-    watt-hours per step. Axiom 1 of flo.optimal.path: the three lists
-    share a length, which is the number of steps the path reaches."""
+def store_wh_at(temp_f: float, params: HeatPumpWaterTankParams) -> int:
+    """The energy of the whole store at one temperature, in watt-hours, on
+    the reference every state's energy is measured from."""
+    n = params.num_layers
+    return round(compute_energy(temp_f, temp_f, temp_f, n, n, params) * 1000)
+
+
+class PathWords(NamedTuple):
+    """The three words one first-step edge leads to: the plan, the tank
+    store along it and bruce's penalties along it, step for step."""
+
+    path: FloOptimalPath
+    store: FloTankStorePath
+    penalties: FloPathPenaltiesBruce
+
+
+def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
+    """The plan the first-step edge leads to: that edge, then the plan
+    onward (``Graph.rollout``), each step at the head the rollout takes.
+    Per step, the heat pump's average watts and the store at the end of the
+    step (energy, the three band temperatures, the two thermoclines as
+    layers of the tuning's NumLayers), and the three penalties the step
+    is charged at that head; the terminal cost is the last head's, and the
+    path cost is every step's cost at its head (electricity at the
+    request's prices plus the three penalties) plus that terminal cost.
+    Every list has the number of steps the path reaches."""
+    asset = graph.asset
+    if not isinstance(asset, HeatPumpWaterTankAsset):
+        raise TypeError("path_words needs a HeatPumpWaterTankAsset graph")
     hours = [m / 60 for m in request.step_duration_minutes]
     hp_avg_w: list[int] = []
     store_wh: list[int] = []
-    for h, (edge, head) in zip(hours, graph.rollout(first, max_steps=len(hours))):
+    top_f: list[int] = []
+    middle_f: list[int] = []
+    bottom_f: list[int] = []
+    thermocline1: list[int] = []
+    thermocline2: list[int] = []
+    rswt: list[float] = []
+    stability: list[float] = []
+    short_cycle: list[float] = []
+    steps_cost = 0.0
+    steps = graph.rollout(first, max_steps=len(hours))
+    for h, (edge, head) in zip(hours, steps):
+        t = edge.tail.time_step
+        start = edge.tail.state
+        end = head.state
         hp_avg_w.append(round(edge.elec_used_kwh / h * 1000))
-        store_wh.append(round(float(head.state.energy) * 1000))
+        steps_cost += asset.cost(start, end, edge.action, t, edge.tail.mode)
+        store_wh.append(round(float(end.energy) * 1000))
+        top_f.append(round(end.top_temp))
+        middle_f.append(round(end.middle_temp))
+        bottom_f.append(round(end.bottom_temp))
+        thermocline1.append(end.thermocline1)
+        thermocline2.append(end.thermocline2)
+        rswt.append(asset.rswt_penalty(start, end, edge.action, t))
+        stability.append(asset.stability_penalty(t, edge.elec_used_kwh))
+        short_cycle.append(asset.short_cycle_penalty(start, edge.action, t, edge.tail.mode))
     n = len(hp_avg_w)
-    return FloOptimalPath(
-        start_unix_s=request.start_unix_s,
-        step_duration_minutes=list(request.step_duration_minutes[:n]),
-        hp_avg_w_list=hp_avg_w,
-        store_wh_list=store_wh,
+    terminal_cost = asset.terminal_node_cost(steps[n - 1][1].state)
+    return PathWords(
+        path=FloOptimalPath(
+            start_unix_s=request.start_unix_s,
+            step_duration_minutes=list(request.step_duration_minutes[:n]),
+            hp_avg_w_list=hp_avg_w,
+            store_wh_list=store_wh,
+        ),
+        store=FloTankStorePath(
+            store_layers=asset.params.num_layers,
+            top_f_list=top_f,
+            middle_f_list=middle_f,
+            bottom_f_list=bottom_f,
+            thermocline1_list=thermocline1,
+            thermocline2_list=thermocline2,
+            empty_store_wh=store_wh_at(EMPTY_STORE_TEMP_F, asset.params),
+            full_store_wh=store_wh_at(asset.params.max_tank_temp_f, asset.params),
+        ),
+        penalties=FloPathPenaltiesBruce(
+            rswt_penalty_usd_list=rswt,
+            stability_penalty_usd_list=stability,
+            short_cycle_penalty_usd_list=short_cycle,
+            terminal_cost_usd=terminal_cost,
+            terminal_cost_empty_store_usd=asset.terminal_cost_full(),
+            path_cost_usd=steps_cost + terminal_cost,
+        ),
     )
 
 
@@ -196,24 +269,26 @@ def recommend(request: FloParams) -> FloRecommendation:
     graph.find_shortest_path()
     pairs = graph.generate_bid(forecast_price_mwh=params.elec_price_mwh[0])
     pq_pairs: list[PriceQuantityUnitless] = []
-    paths: list[FloOptimalPath] = []
+    words: list[PathWords] = []
     for i, pair in enumerate(pairs):
         price_mwh = request.price_max_usd_mwh if i == 0 else pair.price_mwh
         first = graph.best_edge_at_price(pair.price_mwh)
-        path = path_from(graph, request, first)
+        for_pair = path_words(graph, request, first)
         pq_pairs.append(
             PriceQuantityUnitless(
                 price_x1000=round(price_mwh * 1000),
-                quantity_x1000=path.hp_avg_w_list[0],
+                quantity_x1000=for_pair.path.hp_avg_w_list[0],
             )
         )
-        paths.append(path)
+        words.append(for_pair)
     return FloRecommendation(
         bidder_alias=request.g_node_alias,
         pq_pairs=pq_pairs,
         price_unit=MarketPriceUnit.USDPerMWh,
         quantity_unit=MarketQuantityUnit.AvgkW,
-        optimal_path_list=paths,
+        optimal_path_list=[w.path for w in words],
+        store_state_list=[w.store for w in words],
+        path_penalties_list=[w.penalties for w in words],
         flo_name=FLO_NAME,
         flo_repo=FLO_REPO,
         flo_git_commit=params.bruce_git_commit,
