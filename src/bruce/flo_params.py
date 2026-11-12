@@ -208,6 +208,7 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
         site_id=flo.GNodeAlias,
         timestep_duration_hours=[m / 60.0 for m in step_minutes],
         elec_price_mwh=[a + b for a, b in zip(flo.LmpUsdMwhList, flo.DistUsdMwhList, strict=True)],
+        lmp_usd_mwh=list(flo.LmpUsdMwhList),
         bid_min_price_mwh=flo.PriceMinUsdMwh,
         bid_max_price_mwh=flo.PriceMaxUsdMwh,
         storage_volume_gallons=flo.GallonsPerTank * flo.TanksModeled,

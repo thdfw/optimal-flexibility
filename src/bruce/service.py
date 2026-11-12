@@ -111,6 +111,7 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
             lmp + dist
             for lmp, dist in zip(request.lmp_usd_mwh_list, request.dist_usd_mwh_list, strict=True)
         ],
+        lmp_usd_mwh=list(request.lmp_usd_mwh_list),
         bid_min_price_mwh=request.price_min_usd_mwh,
         bid_max_price_mwh=request.price_max_usd_mwh,
         num_layers=tuning.num_layers,

@@ -35,6 +35,7 @@ params = HeatPumpWaterTankParams(
     site_id="local.dev",
     timestep_duration_hours=timestep_duration_hours,
     elec_price_mwh=df['elec_price_mwh'].tolist()[:horizon_timesteps],
+    lmp_usd_mwh=LMP[:horizon_timesteps],
     rswt_f = df['rswt_f'].tolist()[:horizon_timesteps],
     load_kwh = df['load_kwh'].tolist()[:horizon_timesteps],
     oat_f = df['oat_f'].tolist()[:horizon_timesteps],

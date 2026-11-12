@@ -1,6 +1,6 @@
 from typing import Self
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from ..base import Params
 
@@ -75,6 +75,8 @@ class HeatPumpWaterTankParams(Params):
     rswt_f: list[float]
     load_kwh: list[float]
     oat_f: list[float]
+    # Locational marginal price only. Empty when the caller has only the total price.
+    lmp_usd_mwh: list[float] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_load_rwt_buckets(self) -> Self:
@@ -91,6 +93,14 @@ class HeatPumpWaterTankParams(Params):
             raise ValueError("load_bucket_upper_kwh must be strictly increasing")
         if any(u <= 0 for u in self.load_bucket_upper_kwh):
             raise ValueError("load_bucket_upper_kwh entries must be positive")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_lmp_usd_mwh(self) -> Self:
+        if self.lmp_usd_mwh and len(self.lmp_usd_mwh) != self.horizon:
+            raise ValueError(
+                f"lmp_usd_mwh length ({len(self.lmp_usd_mwh)}) must equal horizon ({self.horizon})"
+            )
         return self
 
     @model_validator(mode="after")
