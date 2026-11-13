@@ -1,4 +1,3 @@
 staging: true
 staging_words:
-- type flo.params:001
-- type flo.tuning.bruce:001
+- type flo.params:002

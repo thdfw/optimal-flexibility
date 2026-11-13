@@ -11,11 +11,13 @@ types:
         summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
 
   flo.params:
-    latest_version: "001"
+    latest_version: "002"
     versioning_strategy: "literal"
     versions:
-      "001":
-        summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
+      "002":
+        summary: >
+          - PriceUsdMwhList: add, in place of LmpUsdMwhList and DistUsdMwhList
+          - PriceForecastId: add
 
   flo.recommendation:
     latest_version: "000"

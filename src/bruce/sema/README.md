@@ -7,8 +7,7 @@ brokers only. It MUST NOT be used against hybrid or production brokers.
 
 Staging words in this snapshot:
 
-- type flo.params:001
-- type flo.tuning.bruce:001
+- type flo.params:002
 
 When these words promote to published, rebuild without `--allow-staged` to
 get a publication-grade snapshot (and this section disappears).
