@@ -78,6 +78,10 @@ class HeatPumpWaterTankParams(Params):
     # Locational marginal price only. Empty when the caller has only the total price.
     lmp_usd_mwh: list[float] = Field(default_factory=list)
 
+    # 0-based time steps where the heat pump must run (on) or stay off (off).
+    hp_forced_on_steps: list[int] = Field(default_factory=list)
+    hp_forced_off_steps: list[int] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def _validate_load_rwt_buckets(self) -> Self:
         n = len(self.load_bucket_upper_kwh) + 1
@@ -101,6 +105,17 @@ class HeatPumpWaterTankParams(Params):
             raise ValueError(
                 f"lmp_usd_mwh length ({len(self.lmp_usd_mwh)}) must equal horizon ({self.horizon})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_hp_forced_steps(self) -> Self:
+        for name in ("hp_forced_on_steps", "hp_forced_off_steps"):
+            out_of_range = [s for s in getattr(self, name) if not 0 <= s < self.horizon]
+            if out_of_range:
+                raise ValueError(f"{name} must be in [0, horizon) ([0, {self.horizon})), got {out_of_range}")
+        both = sorted(set(self.hp_forced_on_steps) & set(self.hp_forced_off_steps))
+        if both:
+            raise ValueError(f"Time steps cannot be forced both on and off: {both}")
         return self
 
     @model_validator(mode="after")

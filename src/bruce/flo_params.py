@@ -27,6 +27,48 @@ class FloParamsError(ValueError):
     """The payload is not a bruce ``flo.params``."""
 
 
+# ``flo.tuning.bruce`` fields that switch and tune the RSWT, short-cycle and stability penalties.
+FLO_PENALTY_TUNING_KEYS = (
+    "RswtPenaltyEnabled",
+    "RswtPenaltyWeight",
+    "RswtPenaltyDecay",
+    "RswtPenaltyExponentRate",
+    "RswtPenaltyDecayMaxHour",
+    "ShortCyclePenaltyEnabled",
+    "ShortCyclePenaltyWeight",
+    "StabilityPenaltyEnabled",
+    "StabilityPenaltyWeight",
+    "StabilityPenaltyDecay",
+    "StabilityPenaltyThresholdKwh",
+    "StabilityPenaltyThresholdPriceMwh",
+    "StabilityPenaltyHorizonHours",
+)
+
+
+def _tuning_dict(payload: dict[str, Any]) -> dict[str, Any]:
+    tuning = payload.get("Tuning") if isinstance(payload, dict) else None
+    if not isinstance(tuning, dict):
+        raise FloParamsError("flo.params Tuning must be an object")
+    return tuning
+
+
+def flo_penalty_tuning(payload: dict[str, Any]) -> dict[str, Any]:
+    """The ``FLO_PENALTY_TUNING_KEYS`` values of ``payload``'s Tuning."""
+    tuning = _tuning_dict(payload)
+    return {key: tuning[key] for key in FLO_PENALTY_TUNING_KEYS if key in tuning}
+
+
+def with_penalty_tuning(payload: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    """A copy of ``payload`` whose Tuning takes the ``FLO_PENALTY_TUNING_KEYS`` values in ``overrides``.
+
+    The values are validated when the payload is turned into params.
+    """
+    unknown = sorted(set(overrides) - set(FLO_PENALTY_TUNING_KEYS))
+    if unknown:
+        raise FloParamsError(f"Not penalty tuning keys: {unknown}")
+    return {**payload, "Tuning": {**_tuning_dict(payload), **overrides}}
+
+
 class _FloOptimalPath(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -174,8 +216,17 @@ def _align_previous_path(
     return plan, storage_kwh_now
 
 
-def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParams:
-    """The optimizer params for one ``flo.params`` object."""
+def heat_pump_params_from_flo(
+    payload: dict[str, Any],
+    *,
+    hp_forced_on_steps: list[int] | None = None,
+    hp_forced_off_steps: list[int] | None = None,
+) -> HeatPumpWaterTankParams:
+    """The optimizer params for one ``flo.params`` object.
+
+    ``hp_forced_on_steps`` and ``hp_forced_off_steps`` are 0-based time steps where
+    the heat pump must run or stay off; they are not part of ``flo.params``.
+    """
     if not isinstance(payload, dict):
         raise FloParamsError(f"flo.params payload must be an object, got {type(payload).__name__}")
     if payload.get("TypeName") != "flo.params":
@@ -189,8 +240,6 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
     except ValidationError as e:
         raise FloParamsError(str(e)) from e
 
-    tuning = flo.Tuning
-    sensors = flo.TanksModeled * flo.TempSensorsPerTank
     step_minutes = [float(m) for m in flo.StepDurationMinutes]
     horizon = len(step_minutes)
     previous_plan: list[float] | None = None
@@ -202,6 +251,32 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
             flo.PreviousOptimalPath,
         )
 
+    try:
+        return _heat_pump_params(
+            flo,
+            horizon,
+            step_minutes,
+            previous_plan,
+            previous_storage_kwh,
+            hp_forced_on_steps=list(hp_forced_on_steps or []),
+            hp_forced_off_steps=list(hp_forced_off_steps or []),
+        )
+    except ValidationError as e:
+        raise FloParamsError(str(e)) from e
+
+
+def _heat_pump_params(
+    flo: _FloParams,
+    horizon: int,
+    step_minutes: list[float],
+    previous_plan: list[float] | None,
+    previous_storage_kwh: float | None,
+    *,
+    hp_forced_on_steps: list[int],
+    hp_forced_off_steps: list[int],
+) -> HeatPumpWaterTankParams:
+    tuning = flo.Tuning
+    sensors = flo.TanksModeled * flo.TempSensorsPerTank
     return HeatPumpWaterTankParams(
         horizon=horizon,
         start_unix_s=flo.StartUnixS,
@@ -261,6 +336,8 @@ def heat_pump_params_from_flo(payload: dict[str, Any]) -> HeatPumpWaterTankParam
         load_kwh=list(flo.LoadKwhList),
         oat_f=list(flo.OatFList),
         num_layers=tuning.NumLayers,
+        hp_forced_on_steps=hp_forced_on_steps,
+        hp_forced_off_steps=hp_forced_off_steps,
     )
 
 
@@ -270,13 +347,23 @@ def _use_headless_matplotlib() -> None:
     matplotlib.use("Agg", force=True)
 
 
-def flo_plot_data(payload: dict[str, Any]) -> dict[str, Any]:
+def flo_plot_data(
+    payload: dict[str, Any],
+    *,
+    hp_forced_on_steps: list[int] | None = None,
+    hp_forced_off_steps: list[int] | None = None,
+) -> dict[str, Any]:
     """Solve the heat-pump graph for ``payload``.
 
     Returns the summary plot series under ``summary`` and the first-hour bid
     under ``bid``. Pass ``bid`` to ``flo_bid_plot_data`` for the bid plot series.
+    See ``heat_pump_params_from_flo`` for the forced steps.
     """
-    params = heat_pump_params_from_flo(payload)
+    params = heat_pump_params_from_flo(
+        payload,
+        hp_forced_on_steps=hp_forced_on_steps,
+        hp_forced_off_steps=hp_forced_off_steps,
+    )
     asset = HeatPumpWaterTankAsset(params)
     graph: Graph[Any, Any, Any] = Graph(asset)
     try:
