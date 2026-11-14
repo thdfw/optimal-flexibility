@@ -1,6 +1,6 @@
 metadata:
   registry_version: "1.0"
-  last_updated: "2026-11-10T12:25:00Z"
+  last_updated: "2026-11-14T22:30:00Z"
   maintainer: "gridworks-energy"
 
 formats:
@@ -116,17 +116,17 @@ types:
             - "utc.seconds"
 
   flo.params:
-    latest_version: "001"
+    latest_version: "002"
     owner: gridworks-energy
     versioning_strategy: "literal"
     description: "One request to a FLO for one market slot: bidder, step grid, price and weather forecasts, the modeled store and its state, heat pump facts, market price bounds, and the tuning whose TypeName names the optimizer."
 
     versions:
-      "001":
-        schema_url: "https://schemas.electricity.works/types/flo.params/001"
-        created: "2026-11-02T17:45:00Z"
+      "002":
+        schema_url: "https://schemas.electricity.works/types/flo.params/002"
+        created: "2026-11-13T00:25:00Z"
         status: "published"
-        summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
+        summary: "- PriceUsdMwhList: add, in place of LmpUsdMwhList and DistUsdMwhList - PriceForecastId: add"
         direct_dependencies:
           structural:
             - "flo.optimal.path:000"

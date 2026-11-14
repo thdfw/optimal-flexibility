@@ -135,8 +135,7 @@ class _FloParams(BaseModel):
     GNodeAlias: str
     StartUnixS: int
     StepDurationMinutes: list[float]
-    LmpUsdMwhList: list[float]
-    DistUsdMwhList: list[float]
+    PriceUsdMwhList: list[float]
     PriceMinUsdMwh: float
     PriceMaxUsdMwh: float
     GallonsPerTank: float
@@ -169,8 +168,7 @@ class _FloParams(BaseModel):
             raise ValueError(f"expected TypeName 'flo.params', got {self.TypeName!r}")
         n = len(self.StepDurationMinutes)
         lengths = {
-            "LmpUsdMwhList": len(self.LmpUsdMwhList),
-            "DistUsdMwhList": len(self.DistUsdMwhList),
+            "PriceUsdMwhList": len(self.PriceUsdMwhList),
             "RswtFList": len(self.RswtFList),
             "LoadKwhList": len(self.LoadKwhList),
             "OatFList": len(self.OatFList),
@@ -282,8 +280,7 @@ def _heat_pump_params(
         start_unix_s=flo.StartUnixS,
         site_id=flo.GNodeAlias,
         timestep_duration_hours=[m / 60.0 for m in step_minutes],
-        elec_price_mwh=[a + b for a, b in zip(flo.LmpUsdMwhList, flo.DistUsdMwhList, strict=True)],
-        lmp_usd_mwh=list(flo.LmpUsdMwhList),
+        elec_price_mwh=list(flo.PriceUsdMwhList),
         bid_min_price_mwh=flo.PriceMinUsdMwh,
         bid_max_price_mwh=flo.PriceMaxUsdMwh,
         storage_volume_gallons=flo.GallonsPerTank * flo.TanksModeled,
