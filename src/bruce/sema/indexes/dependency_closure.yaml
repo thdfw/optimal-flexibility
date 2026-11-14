@@ -26,8 +26,14 @@ types:
       - flo.tuning.alice:000
       - flo.tuning.bruce:001
       versionless_types: []
-  flo.recommendation:
+  flo.path.penalties.bruce:
     '000':
+      enums: []
+      formats: []
+      types: []
+      versionless_types: []
+  flo.recommendation:
+    '001':
       enums:
       - market.price.unit:000
       - market.quantity.unit:000
@@ -40,7 +46,16 @@ types:
       - utc.seconds
       types:
       - flo.optimal.path:000
+      - flo.path.penalties.bruce:000
+      - flo.tank.store.path:000
       - price.quantity.unitless:001
+      versionless_types: []
+  flo.tank.store.path:
+    '000':
+      enums: []
+      formats:
+      - positive.int
+      types: []
       versionless_types: []
   flo.tuning.alice:
     '000':

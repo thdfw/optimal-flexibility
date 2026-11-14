@@ -12,10 +12,8 @@
 # so the snapshot is reproducible from the sema commit the checkout sits
 # on; the snapshot's README records it.
 #
-# --allow-staged: the FLO words are staging until they promote, so this is
-# a staging snapshot (marker in the indexes, README banner). bruce answers
-# one call from the LTN and never speaks on a broker, so the dev-only rule
-# is met.
+# The build is published-only: a seed that reaches a staging word fails
+# here rather than shipping a dev-only snapshot.
 #
 # Usage:
 #   scripts/regen_sema_snapshot.sh                 # sibling ../sema checkout
@@ -41,8 +39,8 @@ echo "==> seed:      ${SEED}"
 echo "==> package:   ${PACKAGE_NAME}"
 
 cd "${SEMA_REPO}"
-echo "==> sema snapshot prepare --allow-staged"
-uv run sema snapshot prepare --allow-staged "${SEED}"
+echo "==> sema snapshot prepare"
+uv run sema snapshot prepare "${SEED}"
 echo "==> sema snapshot build --package-name ${PACKAGE_NAME}"
 uv run sema snapshot build --package-name "${PACKAGE_NAME}"
 
