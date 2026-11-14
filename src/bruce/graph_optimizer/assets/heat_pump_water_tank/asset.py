@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .model import HeatPumpWaterTankModel
 
 OTHER_SIDE_MAX_WINDOW_KWH = 2.0
+COLDEST_TANK_TEMP_F = 70
 
 
 class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankAction, HeatPumpWaterTankParams]):
@@ -130,7 +131,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             max_temp, max_temp, max_temp, self.params.num_layers, self.params.num_layers, self.params
         ).energy
         self.min_state_energy = HeatPumpWaterTankState.build(
-            70, 70, 70, self.params.num_layers, self.params.num_layers, self.params
+            COLDEST_TANK_TEMP_F,
+            COLDEST_TANK_TEMP_F,
+            COLDEST_TANK_TEMP_F,
+            self.params.num_layers,
+            self.params.num_layers,
+            self.params,
         ).energy
         return states
 
@@ -181,11 +187,15 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         heat_to_store_for_full = self.max_state_energy - energy
         hp_heat_out_for_full = heat_to_store_for_full + load + losses
+        forced_on = time_step in self.params.hp_forced_on_steps
+        forced_off = time_step in self.params.hp_forced_off_steps
 
         # (heat out, next mode: 1 iff this step runs at full available power through its end)
-        hp_heat_out_levels: list[tuple[float, int]] = [(0.0, 0)]
+        hp_heat_out_levels: list[tuple[float, int]] = [] if forced_on else [(0.0, 0)]
         fill_to_full = False
-        if hp_heat_out_for_full >= max_hp_heat_out:
+        if forced_off:
+            pass
+        elif hp_heat_out_for_full >= max_hp_heat_out:
             hp_heat_out_levels.append((max_hp_heat_out, 1))
         elif (
             heat_to_store_for_full > 0
@@ -621,7 +631,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             return 0
 
         load_bucket = self.transition_variant(state, action, time_step)
-        drawn_layers = self.layers_drawn(state, -action.heat_to_store_kwh, load_bucket)
+        drawn_layers = self.layers_drawn(state, -action.heat_to_store_kwh, load_bucket, rswt=rswt)
 
         exponent_rate = self.params.rswt_penalty_exponent_rate
         weight = self.params.rswt_penalty_weight
@@ -646,13 +656,23 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         state: HeatPumpWaterTankState,
         energy_kwh: float,
         load_bucket: int = 0,
+        *,
+        rswt: float,
     ) -> list[tuple[float, float]]:
-        """Temperature and (fractional) number of layers drawn from the top of the storage to supply energy_kwh.
+        """Temperature of the water drawn from the top of the storage to supply energy_kwh, and how many
+        layers the load would have drawn at rswt for the heat that water gives.
+
+        Counting layers at rswt rather than layers drawn keeps lukewarm water, which gives little heat
+        per layer and is drawn many times over, from weighing more than colder water.
 
         Each layer drawn is returned to the bottom at RWT, so once all original layers have been drawn,
-        the returned water is drawn next, in the order it came back.
+        the returned water is drawn next, in the order it came back. Once the water drawn is too cold
+        to give any heat, the rest of energy_kwh is counted at COLDEST_TANK_TEMP_F.
         """
         layer_kwh_per_f = self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
+        rswt_layer_kwh = layer_kwh_per_f * (rswt - self.params.rwt(rswt, load_bucket))
+        if rswt_layer_kwh <= 0:
+            return []
         layers = self._temps_by_layer(state)
         drawn: list[tuple[float, float]] = []
         remaining_kwh = energy_kwh
@@ -662,10 +682,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 rwt = self.params.rwt(temp, load_bucket)
                 layer_kwh = layer_kwh_per_f * (temp - rwt)
                 if layer_kwh <= 0:
+                    drawn.append((COLDEST_TANK_TEMP_F, remaining_kwh / rswt_layer_kwh))
                     return drawn
-                fraction = min(1.0, remaining_kwh / layer_kwh)
-                drawn.append((temp, fraction))
-                remaining_kwh -= fraction * layer_kwh
+                supplied_kwh = min(remaining_kwh, layer_kwh)
+                drawn.append((temp, supplied_kwh / rswt_layer_kwh))
+                remaining_kwh -= supplied_kwh
                 if remaining_kwh <= 1e-9:
                     return drawn
                 returned.append(rwt)

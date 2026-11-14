@@ -58,13 +58,75 @@ def _hp_heat_out_kwh(
     return asset.elec_used_kwh(state, action, time_step) * cop
 
 
-def _thermal_and_normalized_prices(params: HeatPumpWaterTankParams) -> tuple[list[float], list[float]]:
-    """Per-step price of heat ($/MWh_th) and the electricity price divided by the horizon's mean COP."""
+def _thermal_and_normalized_prices(
+    params: HeatPumpWaterTankParams,
+) -> tuple[list[float], list[float], list[float], list[float]]:
+    """Per-step thermal price series and companion overlays for the power panel.
+
+    Thermal price is (LMP + distribution) / step COP. Thermal LMP is LMP / step COP.
+    Overlay: LMP/COP(t) + Dist/COP(t) − Dist/mean_COP ($/MWh_th), i.e. total thermal price
+    with the distribution leg re-valued from step COP to horizon mean COP. Electricity
+    price / mean COP is returned for the elec line.
+    """
     cops = [params.COP(oat) for oat in params.oat_f]
     mean_cop = sum(cops) / len(cops)
     thermal = [float(p / cop) for p, cop in zip(params.elec_price_mwh, cops, strict=True)]
+    thermal_lmp: list[float] = []
+    thermal_overlay: list[float] = []
+    if params.lmp_usd_mwh:
+        dist_mwh = [
+            float(e - l)
+            for e, l in zip(params.elec_price_mwh, params.lmp_usd_mwh, strict=True)
+        ]
+        thermal_lmp = [
+            float(l / cop) for l, cop in zip(params.lmp_usd_mwh, cops, strict=True)
+        ]
+        thermal_overlay = [
+            float(l / cop + d / cop - d / mean_cop)
+            for l, d, cop in zip(params.lmp_usd_mwh, dist_mwh, cops, strict=True)
+        ]
     normalized = [float(p / mean_cop) for p in params.elec_price_mwh]
-    return thermal, normalized
+    return thermal, thermal_lmp, thermal_overlay, normalized
+
+
+_ELEC_PRICE_HIGHLIGHT_USD_MWH = 400.0
+
+
+def _highlight_high_elec_price(
+    ax: Any,
+    step_starts: list[datetime],
+    elec_price_mwh: list[float],
+) -> None:
+    """Light yellow bands when forecast electricity price is above $/MWh threshold."""
+    n_steps = min(len(elec_price_mwh), len(step_starts) - 1)
+    for i in range(n_steps):
+        if elec_price_mwh[i] > _ELEC_PRICE_HIGHLIGHT_USD_MWH:
+            ax.axvspan(
+                step_starts[i],
+                step_starts[i + 1],
+                facecolor="#ffe9a8",
+                alpha=0.16,
+                zorder=0,
+            )
+
+
+def _overlay_scaled_to_thermal_range(
+    thermal: list[float], overlay: list[float]
+) -> list[float]:
+    """Affine map overlay onto the thermal price min–max so both share the plot band."""
+    if not overlay or len(overlay) != len(thermal):
+        return []
+    t_min, t_max = min(thermal), max(thermal)
+    o_min, o_max = min(overlay), max(overlay)
+    if o_max <= o_min:
+        mid = (t_min + t_max) / 2.0
+        return [float(mid)] * len(overlay)
+    span_t = t_max - t_min
+    span_o = o_max - o_min
+    return [
+        float(t_min + (x - o_min) / span_o * span_t)
+        for x in overlay
+    ]
 
 
 def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
@@ -135,7 +197,10 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
         params.load_kwh[t] / params.timestep_duration_hours[t] for t in range(params.horizon)
     )]
     prices = [float(v) for v in params.elec_price_mwh]
-    thermal_prices, normalized_prices = _thermal_and_normalized_prices(params)
+    thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
+        params
+    )
+    thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
     # Repeat the last step so a post-step line covers the final interval.
     if load_kw:
         load_kw.append(load_kw[-1])
@@ -143,6 +208,11 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
         prices.append(prices[-1])
         thermal_prices.append(thermal_prices[-1])
         normalized_prices.append(normalized_prices[-1])
+        if thermal_lmps:
+            thermal_lmps.append(thermal_lmps[-1])
+            thermal_overlay.append(thermal_overlay[-1])
+            if thermal_overlay_scaled:
+                thermal_overlay_scaled.append(thermal_overlay_scaled[-1])
 
     norm = Normalize(vmin=60, vmax=180)
     cmap = matplotlib.colormaps["Reds"]
@@ -261,6 +331,9 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
             "priceUsdMwh": prices,
             "priceNormalizedUsdMwh": normalized_prices,
             "thermalPriceUsdMwh": thermal_prices,
+            "thermalLmpUsdMwh": thermal_lmps,
+            "thermalOverlayUsdMwh": thermal_overlay,
+            "thermalOverlayScaledUsdMwh": thermal_overlay_scaled,
             "yRange": [-0.5, 1.5 * hp_max] if hp_max > 0 else None,
         },
         "storage": {
@@ -359,12 +432,17 @@ def plot_graph_results(
         params.load_kwh[t] / params.timestep_duration_hours[t]
         for t in range(params.horizon)
     ]
-    thermal_prices, normalized_prices = _thermal_and_normalized_prices(params)
+    thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
+        params
+    )
+    thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
 
     start_dt = step_starts[0]
     title_start = start_dt.strftime("%b %d, %Y %H:%M %Z")
     total_cost_str = f"${round(initial_node.pathcost, 2)}"
     fig, ax = plt.subplots(3, 1, sharex=True, figsize=(12, 8), gridspec_kw={"height_ratios": [3, 3, 2]})
+
+    _highlight_high_elec_price(ax[0], sp_time, list(params.elec_price_mwh))
 
     ax[0].step(sp_time, sp_hp_heat_out_kw, where="post", color="tab:blue", alpha=0.6, label="HP")
     ax[0].step(sp_time[:-1], load_kw, where="post", color="tab:red", alpha=0.6, label="Load")
@@ -373,7 +451,24 @@ def plot_graph_results(
     if max(sp_hp_heat_out_kw) > 0:
         ax[0].set_ylim([-0.5, 1.5 * max(sp_hp_heat_out_kw)])
     ax0_price = ax[0].twinx()
-    ax0_price.step(sp_time[:-1], thermal_prices, where="post", color="gray", alpha=0.6, label="Thermal price")
+    if thermal_overlay_scaled:
+        ax0_price.step(
+            sp_time[:-1],
+            thermal_overlay_scaled,
+            where="post",
+            color="dimgray",
+            alpha=0.75,
+            label="Thermal overlay (scaled)",
+        )
+    ax0_price.step(
+        sp_time[:-1],
+        thermal_prices,
+        where="post",
+        color="gray",
+        alpha=0.6,
+        linestyle="--",
+        label="Thermal price",
+    )
     ax0_price.step(
         sp_time[:-1],
         normalized_prices,
@@ -575,7 +670,7 @@ def plot_graph_results(
     for a in ax:
         a.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=_AMERICA_NEW_YORK))
         a.xaxis.set_major_locator(mdates.AutoDateLocator())
-    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
     fig.text(
         0.5,
         0.98,

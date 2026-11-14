@@ -17,7 +17,7 @@ DIST = [50.13, 50.13, 487.63, 487.63, 487.63, 487.63, 487.63, 54.98, 54.98, 54.9
 input_data = {
     'elec_price_mwh': [lmp+dist for lmp, dist in zip(LMP, DIST)],
     'rswt_f': [120]*len(LMP),
-    'load_kwh': [3.5]*len(LMP),
+    'load_kwh': [4]*len(LMP),
     'oat_f': [30]*len(LMP)
 }
 df = pd.DataFrame(input_data)
@@ -35,9 +35,11 @@ params = HeatPumpWaterTankParams(
     site_id="local.dev",
     timestep_duration_hours=timestep_duration_hours,
     elec_price_mwh=df['elec_price_mwh'].tolist()[:horizon_timesteps],
+    lmp_usd_mwh=LMP[:horizon_timesteps],
     rswt_f = df['rswt_f'].tolist()[:horizon_timesteps],
     load_kwh = df['load_kwh'].tolist()[:horizon_timesteps],
     oat_f = df['oat_f'].tolist()[:horizon_timesteps],
+    # hp_forced_off_steps = [2,3,4,5,6]
 )
 asset = HeatPumpWaterTankAsset(params)
 graph = Graph(asset)
