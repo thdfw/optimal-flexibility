@@ -1,10 +1,10 @@
 metadata:
   generated_from: indexes/public_registry.yaml
-  generated_at: '2026-11-02T17:59:03Z'
+  generated_at: '2026-11-10T12:45:16Z'
   note: Transitive closure of initial_targets
 initial_targets:
 - flo.params:001
-- flo.recommendation:000
+- flo.recommendation:001
 worklist:
   formats:
     git.commit:
@@ -40,9 +40,15 @@ worklist:
     flo.params:
       '001':
         path: definitions/types/flo.params/001.yaml
-    flo.recommendation:
+    flo.path.penalties.bruce:
       '000':
-        path: definitions/types/flo.recommendation/000.yaml
+        path: definitions/types/flo.path.penalties.bruce/000.yaml
+    flo.recommendation:
+      '001':
+        path: definitions/types/flo.recommendation/001.yaml
+    flo.tank.store.path:
+      '000':
+        path: definitions/types/flo.tank.store.path/000.yaml
     flo.tuning.alice:
       '000':
         path: definitions/types/flo.tuning.alice/000.yaml

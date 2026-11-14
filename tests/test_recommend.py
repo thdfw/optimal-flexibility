@@ -109,12 +109,39 @@ def test_one_path_per_pair_and_first_step_is_the_bid(
         assert len(path.hp_avg_w_list) == HORIZON
 
 
+def test_the_store_and_the_penalties_follow_each_path(
+    recommendation: FloRecommendation,
+) -> None:
+    stores = recommendation.store_state_list
+    penalties = recommendation.path_penalties_list
+    assert stores is not None and penalties is not None
+    assert len(stores) == len(penalties) == len(recommendation.optimal_path_list)
+    for path, store, charged in zip(recommendation.optimal_path_list, stores, penalties, strict=True):
+        n = len(path.step_duration_minutes)
+        assert store.store_layers == 9
+        assert len(store.top_f_list) == len(store.thermocline2_list) == n
+        assert all(1 <= t1 <= t2 <= 9 for t1, t2 in zip(store.thermocline1_list, store.thermocline2_list, strict=True))
+        assert all(b <= m <= t for t, m, b in zip(store.top_f_list, store.middle_f_list, store.bottom_f_list, strict=True))
+        assert len(charged.rswt_penalty_usd_list) == len(charged.short_cycle_penalty_usd_list) == n
+        assert all(x >= 0 for x in charged.rswt_penalty_usd_list + charged.stability_penalty_usd_list + charged.short_cycle_penalty_usd_list)
+        assert charged.terminal_cost_usd >= 0
+        assert store.empty_store_wh < min(path.store_wh_list)
+        assert max(path.store_wh_list) <= store.full_store_wh
+        assert charged.terminal_cost_usd <= charged.terminal_cost_empty_store_usd
+        assert charged.path_cost_usd >= charged.terminal_cost_usd + sum(
+            charged.rswt_penalty_usd_list
+            + charged.stability_penalty_usd_list
+            + charged.short_cycle_penalty_usd_list
+        )
+
+
 def test_bytes_boundary(recommendation: FloRecommendation) -> None:
     from bruce.service import recommend_bytes
 
     reply = FloRecommendation.from_bytes(recommend_bytes(oak_request().to_bytes()))
     assert reply.pq_pairs == recommendation.pq_pairs
     assert reply.optimal_path_list == recommendation.optimal_path_list
+    assert reply.store_state_list == recommendation.store_state_list
 
 
 def test_the_previous_path_lines_up_from_its_second_step() -> None:
