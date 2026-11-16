@@ -44,6 +44,10 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_exponent_rate: float = 0.05
     rswt_penalty_decay_max_hour: int = 12
 
+    # Unmet load penalty
+    unmet_load_penalty_enabled: bool = True
+    unmet_load_penalty_weight: float = 10.0
+
     # Short-cycle penalty (from-off fill-to-full below this step's max power)
     short_cycle_penalty_enabled: bool = False
     short_cycle_penalty_weight: float = 6.0

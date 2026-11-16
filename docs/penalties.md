@@ -2,7 +2,7 @@
 
 The graph is made of nodes organized in 48 layers, which represent the feasible tank states in every time step, as well as edges, which represent all feasible transitions between adjacent time steps. Each edge (transition) has a cost, and the goal is to find the path that has the lowest cost from the current node to any node at the end of the 48-hour horizon. 
 
-The cost to minimize is not only the electricity used: we also add penalty terms (priced in dollars, and proportional to the median electricity price in the horizon) to account for the RSWT constraint, short-cycling, plan stability, and the final state of the storage at the end of the planning horizon.
+The cost to minimize is not only the electricity used: we also add penalty terms (priced in dollars, and proportional to the median electricity price in the horizon) to account for the RSWT constraint, load the storage cannot supply, short-cycling, plan stability, and the final state of the storage at the end of the planning horizon.
 
 # RSWT penalty
 
@@ -22,19 +22,41 @@ $$
 
 where:
 
-- $\omega$ is the penalty weight (in kWh of electricity per gallon)
-- $p_{\mathrm{med}}$ is the median electricity price over the planning horizon (in $/kWh)
-- $\lambda$ is the decay factor
-- $H$ is the hour after which the penalty reaches its full weight
-- $t$ is the number of hours between the start of the horizon and the start of the time step
-- $i$ indexes the layers of water drawn from the storage during the time step
-- $V_i$ is the volume drawn from layer $i$ during the time step (in gallons)
-- $k$ is the exponent rate
-- $T_i$ is the temperature of layer $i$
+- \(\omega\) is the penalty weight (in kWh of electricity per gallon)
+- \(p_{\mathrm{med}}\) is the median electricity price over the planning horizon (in $/kWh)
+- \(\lambda\) is the decay factor
+- \(H\) is the hour after which the penalty reaches its full weight
+- \(t\) is the number of hours between the start of the horizon and the start of the time step
+- \(i\) indexes the layers of water drawn from the storage during the time step
+- \(V_i\) is the volume drawn from layer \(i\) during the time step (in gallons)
+- \(k\) is the exponent rate
+- \(T_i\) is the temperature of layer \(i\)
 
-Scaling by $p_{\mathrm{med}}$ keeps weights stable across different price sequences.
+Scaling by \(p_{\mathrm{med}}\) keeps weights stable across different price sequences.
 
-The parameters to tune are $\omega, \lambda, H, k$.
+The parameters to tune are \(\omega, \lambda, H, k\).
+
+# Unmet load penalty
+
+The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage is credited with supplying load it doesn't have. Without a dedicated cost, the only thing pricing this free heat is the RSWT penalty, which is meant to describe comfort a few degrees below RSWT and not a physically impossible transition.
+
+For each discharging edge whose target energy \(E(s_t) + \Delta E_t\) is below the energy of the coldest state in the graph, we apply the following cost penalty:
+
+$$
+\text{unmet-load-penalty}_t = \omega \cdot \max_{\tau} \frac{p_\tau}{\text{COP}_\tau} \cdot \max\left(0,\; E(s_{t+1}) - \left(E(s_t) + \Delta E_t\right) - L_t\right)
+$$
+
+where:
+
+- \(\omega\) is the penalty weight (dimensionless)
+- \(\max_\tau p_\tau / \text{COP}_\tau\) is the most expensive heat pump heat over the planning horizon (in $/kWh thermal)
+- \(E(s)\) is the stored energy in state \(s\) (in kWh)
+- \(\Delta E_t\) is the heat to the storage on the edge (negative when discharging, in kWh)
+- \(L_t\) is the storage losses during the time step (in kWh): losses are given away for free, since a storage at the floor has no losses left to give, but the load is not
+
+With \(\omega > 1\), every kWh of load the storage cannot supply costs more than producing that heat with the heat pump at the most expensive hour, so the FLO always prefers to charge ahead of time. The penalty is finite rather than infinite so that, when unmet load is unavoidable (e.g. starting at the floor during hours where the heat pump is forced off), the FLO still minimizes the unmet kWh and then the cost.
+
+The parameter to tune is \(\omega\).
 
 # Stability penalty
 
@@ -48,7 +70,7 @@ That being said, sticking to previous plans at all costs is not the optimal stra
 
 For a strategy that combines both robustness against noise and flexibility in face of real variation, we use a stability penalty that adds a cost to plan changes that result from small tank state variations (more likely to be responding to noise). The cost of changing plans also decreases exponentially down the planning horizon.
 
-If the currently stored energy is within $\Delta E_{\max}$ of what the previous plan predicted for the current time, and the electricity price forecast for the current hour is within $\Delta p_{\max}$ of the previous forecast, we apply the following cost penalty to each edge that starts within the first $H$ hours of the horizon:
+If the currently stored energy is within \(\Delta E_{\max}\) of what the previous plan predicted for the current time, and the electricity price forecast for the current hour is within \(\Delta p_{\max}\) of the previous forecast, we apply the following cost penalty to each edge that starts within the first \(H\) hours of the horizon:
 
 $$
 \text{stability-penalty}_t = \omega \cdot p_{\mathrm{med}} \cdot \lambda^{\,t} \cdot \left| e_t - \hat{e}_t \right|
@@ -56,15 +78,15 @@ $$
 
 where:
 
-- $\omega$ is the penalty weight (dimensionless)
-- $p_{\mathrm{med}}$ is the median electricity price over the planning horizon (in $/kWh)
-- $\lambda$ is the decay factor
-- $t$ is the number of hours between the start of the horizon and the start of the time step
-- $H$ is the number of hours after which the penalty no longer applies
-- $e_t$ is the heat pump electricity use on the edge (in kWh)
-- $\hat{e}_t$ is the heat pump electricity use that the previous plan had for the same time step (in kWh)
+- \(\omega\) is the penalty weight (dimensionless)
+- \(p_{\mathrm{med}}\) is the median electricity price over the planning horizon (in $/kWh)
+- \(\lambda\) is the decay factor
+- \(t\) is the number of hours between the start of the horizon and the start of the time step
+- \(H\) is the number of hours after which the penalty no longer applies
+- \(e_t\) is the heat pump electricity use on the edge (in kWh)
+- \(\hat{e}_t\) is the heat pump electricity use that the previous plan had for the same time step (in kWh)
 
-The parameters to tune are $\omega, \lambda, H, \Delta E_{\max}, \Delta p_{\max}$.
+The parameters to tune are \(\omega, \lambda, H, \Delta E_{\max}, \Delta p_{\max}\).
 
 # Short-cycle penalty
 
@@ -78,12 +100,12 @@ $$
 
 where:
 
-- $\omega$ is the penalty weight (in kWh of electricity): a start that runs for zero minutes costs $\omega$ kWh at $p_{\mathrm{med}}$
-- $p_{\mathrm{med}}$ is the median electricity price over the planning horizon (in $/kWh)
-- $Q_t$ is the heat pump thermal output on the edge (in kWh)
-- $Q_t^{\max}$ is the thermal output available this step if the unit runs through the end of the hour (after turn-on time)
+- \(\omega\) is the penalty weight (in kWh of electricity): a start that runs for zero minutes costs \(\omega\) kWh at \(p_{\mathrm{med}}\)
+- \(p_{\mathrm{med}}\) is the median electricity price over the planning horizon (in $/kWh)
+- \(Q_t\) is the heat pump thermal output on the edge (in kWh)
+- \(Q_t^{\max}\) is the thermal output available this step if the unit runs through the end of the hour (after turn-on time)
 
-The parameter to tune is $\omega$.
+The parameter to tune is \(\omega\).
 
 # Terminal cost
 
@@ -97,15 +119,15 @@ $$
 
 where:
 
-- $s$ is the tank state of the node
-- $E(s)$ is the usable energy in state $s$ (in kWh), approximated by walking layers from the top down and summing energy relative to RSWT in each layer
-- $E^{\max}$ is the same sum for a full storage at max temperature
-- $p_{\mathrm{med,end}}$ is the median electricity price over the last 24 hours of the horizon (in $/kWh)
-- $\overline{\text{COP}}_{\text{end}}$ is the average heat pump COP over the same 24 hours
+- \(s\) is the tank state of the node
+- \(E(s)\) is the usable energy in state \(s\) (in kWh), approximated by walking layers from the top down and summing energy relative to RSWT in each layer
+- \(E^{\max}\) is the same sum for a full storage at max temperature
+- \(p_{\mathrm{med,end}}\) is the median electricity price over the last 24 hours of the horizon (in $/kWh)
+- \(\overline{\text{COP}}_{\text{end}}\) is the average heat pump COP over the same 24 hours
 
-This does not force the storage to be full at the end of the horizon. If electricity in the last hours is more expensive than $p_{\mathrm{med,end}}$, the FLO will still discharge the storage, since the stored heat is then worth less than it would cost to produce at the median expected price. The terminal cost mainly keeps the end of the plans realistic and avoids changing decisions as we move forward in time and new hours enter the planning horizon.
+This does not force the storage to be full at the end of the horizon. If electricity in the last hours is more expensive than \(p_{\mathrm{med,end}}\), the FLO will still discharge the storage, since the stored heat is then worth less than it would cost to produce at the median expected price. The terminal cost mainly keeps the end of the plans realistic and avoids changing decisions as we move forward in time and new hours enter the planning horizon.
 
-There are no weights to tune; the only choice is the window used to compute $p_{\mathrm{med,end}}$ and $\overline{\text{COP}}_{\text{end}}$.
+There are no weights to tune; the only choice is the window used to compute \(p_{\mathrm{med,end}}\) and \(\overline{\text{COP}}_{\text{end}}\).
 
 # OPTIONAL (not for now): Adding thermal mass
 
