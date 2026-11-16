@@ -7,6 +7,7 @@ types:
   flo.params: flo.params
   flo.path.penalties.bruce: flo.path.penalties.bruce
   flo.recommendation: flo.recommendation
+  flo.rerun.request: flo.rerun.request
   flo.tank.store.path: flo.tank.store.path
   flo.tuning.alice: flo.tuning.alice
   flo.tuning.bruce: flo.tuning.bruce

@@ -18,6 +18,8 @@ types:
         summary: >
           - PriceUsdMwhList: add, in place of LmpUsdMwhList and DistUsdMwhList
           - PriceForecastId: add
+      "001":
+        summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
 
   flo.path.penalties.bruce:
     latest_version: "000"
@@ -34,6 +36,13 @@ types:
         summary: >
           - StoreStateList: add (optional, oneOf flo.tank.store.path)
           - PathPenaltiesList: add (optional, oneOf flo.path.penalties.bruce)
+
+  flo.rerun.request:
+    latest_version: "000"
+    versioning_strategy: "literal"
+    versions:
+      "000":
+        summary: "Params (oneOf flo.params 001, 002), HpForcedOnSteps and HpForcedOffSteps (non.negative.int, 0 is first step); axioms ForcedStepsWithinHorizon, ForcedOnOffDisjoint."
 
   flo.tank.store.path:
     latest_version: "000"

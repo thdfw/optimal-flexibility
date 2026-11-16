@@ -22,3 +22,6 @@ initial_targets:
       versions: ["002"]
     flo.recommendation:
       versions: ["001"]
+    # Body of POST …/flo.rerun once bruce reads flo.rerun.request.
+    flo.rerun.request:
+      versions: ["000"]
