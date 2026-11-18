@@ -28,9 +28,11 @@ where:
 - \(H\) is the hour after which the penalty reaches its full weight
 - \(t\) is the number of hours between the start of the horizon and the start of the time step
 - \(i\) indexes the layers of water drawn from the storage during the time step
-- \(V_i\) is the volume drawn from layer \(i\) during the time step (in gallons)
+- \(V_i\) is the volume of water at \(\text{RSWT}_t\) that would supply the same heat as the water actually drawn from layer \(i\) (in gallons)
 - \(k\) is the exponent rate
 - \(T_i\) is the temperature of layer \(i\)
+
+Layers are drawn from the top. Each layer is returned to the bottom at its return-water temperature and can be drawn again. Counting \(V_i\) at RSWT, rather than as the physical volume drawn, keeps lukewarm water — which gives little heat per layer and is drawn many times over — from weighing more than colder water. When the next water is at or below its return temperature and can give no more heat, the walk stops. The energy still requested is not entered in the sum as water at the coldest tank temperature. That undeliverable remainder is priced by the unmet-load penalty.
 
 Scaling by \(p_{\mathrm{med}}\) keeps weights stable across different price sequences.
 
@@ -38,7 +40,7 @@ The parameters to tune are \(\omega, \lambda, H, k\).
 
 # Unmet load penalty
 
-The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage is credited with supplying load it doesn't have. Without a dedicated cost, the only thing pricing this free heat is the RSWT penalty, which is meant to describe comfort a few degrees below RSWT and not a physically impossible transition.
+The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage is credited with supplying load it doesn't have. The RSWT penalty only counts water that is actually drawn, and stops once that water can no longer give heat, so it does not price this undeliverable remainder.
 
 For each discharging edge whose target energy \(E(s_t) + \Delta E_t\) is below the energy of the coldest state in the graph, we apply the following cost penalty:
 

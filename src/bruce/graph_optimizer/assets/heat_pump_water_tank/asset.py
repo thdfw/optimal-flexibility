@@ -704,7 +704,8 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         Each layer drawn is returned to the bottom at RWT, so once all original layers have been drawn,
         the returned water is drawn next, in the order it came back. Once the water drawn is too cold
-        to give any heat, the rest of energy_kwh is counted at COLDEST_TANK_TEMP_F.
+        to give any heat, the rest of energy_kwh is left uncounted: that undeliverable heat is priced
+        by the unmet-load penalty, not as water drawn below RSWT.
         """
         layer_kwh_per_f = self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
         rswt_layer_kwh = layer_kwh_per_f * (rswt - self.params.rwt(rswt, load_bucket))
@@ -719,7 +720,6 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 rwt = self.params.rwt(temp, load_bucket)
                 layer_kwh = layer_kwh_per_f * (temp - rwt)
                 if layer_kwh <= 0:
-                    drawn.append((COLDEST_TANK_TEMP_F, remaining_kwh / rswt_layer_kwh))
                     return drawn
                 supplied_kwh = min(remaining_kwh, layer_kwh)
                 drawn.append((temp, supplied_kwh / rswt_layer_kwh))
