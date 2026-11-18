@@ -198,6 +198,31 @@ def test_a_rerun_request_puts_the_forced_steps_on_the_optimizer_params() -> None
     assert params.hp_forced_off_steps == [2]
 
 
+def test_a_002_request_is_read_as_003_with_the_unmet_load_penalty_off() -> None:
+    from pathlib import Path
+
+    from bruce.service import flo_params_from_bytes
+
+    raw = Path("src/bruce/sema/samples/flo.params.002.json").read_bytes()
+    params = flo_params_from_bytes(raw)
+    assert params.version == "003"
+    assert params.g_node_alias == "hw1.isone.me.versant.keene.oak"
+    assert isinstance(params.tuning, FloTuningBruce)
+    assert params.tuning.version == "002"
+    assert params.tuning.unmet_load_penalty_enabled is False
+    assert params.tuning.unmet_load_penalty_weight == 10.0
+
+
+def test_a_001_request_names_the_version_bruce_reads() -> None:
+    from pathlib import Path
+
+    from bruce.service import flo_params_from_bytes
+
+    raw = Path("src/bruce/sema/samples/flo.params.001.json").read_bytes()
+    with pytest.raises(ValueError, match="bruce reads flo.params 003 and this is 001"):
+        flo_params_from_bytes(raw)
+
+
 def test_a_rerun_of_an_older_params_names_the_version_bruce_reads() -> None:
     import json
     from pathlib import Path
