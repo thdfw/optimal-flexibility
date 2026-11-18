@@ -6,7 +6,13 @@ test_generate_bid needs)."""
 import pytest
 
 from bruce.sema.enums import SeasonalStorageMode
-from bruce.sema.types import FloOptimalPath, FloParams, FloRecommendation, FloTuningBruce
+from bruce.sema.types import (
+    FloOptimalPath,
+    FloParams,
+    FloRecommendation,
+    FloRerunRequest,
+    FloTuningBruce,
+)
 from bruce.service import params_from_request, recommend
 
 HORIZON = 12
@@ -180,3 +186,82 @@ def test_params_take_the_layers_from_the_tuning() -> None:
     assert isinstance(request.tuning, FloTuningBruce)
     assert params.num_layers == request.tuning.num_layers
     assert (params.initial_thermocline1, params.initial_thermocline2) == (3, 6)
+
+
+def test_a_rerun_request_puts_the_forced_steps_on_the_optimizer_params() -> None:
+    params = params_from_request(
+        oak_request(), hp_forced_on_steps=[1, 4], hp_forced_off_steps=[2]
+    )
+    assert params.hp_forced_on_steps == [1, 4]
+    assert params.hp_forced_off_steps == [2]
+
+
+def test_a_rerun_of_an_older_params_names_the_version_bruce_reads() -> None:
+    import json
+    from pathlib import Path
+
+    from bruce.service import flo_to_solve
+
+    params = json.loads(
+        Path("src/bruce/sema/samples/flo.params.001.json").read_text()
+    )
+    request = FloRerunRequest.from_dict(
+        {
+            "Params": params,
+            "HpForcedOnSteps": [],
+            "HpForcedOffSteps": [],
+            "TypeName": "flo.rerun.request",
+            "Version": "000",
+        }
+    )
+    with pytest.raises(ValueError, match="bruce reads flo.params 002 and this is 001"):
+        flo_to_solve(request)
+
+
+def _cheapest(recommendation: FloRecommendation):
+    penalties = recommendation.path_penalties_list
+    assert penalties is not None
+    index = min(range(len(penalties)), key=lambda i: penalties[i].path_cost_usd)
+    return recommendation.optimal_path_list[index], penalties[index]
+
+
+def test_forced_off_steps_are_zero_and_cost_more(recommendation: FloRecommendation) -> None:
+    path, charged = _cheapest(recommendation)
+    running = [i for i, watts in enumerate(path.hp_avg_w_list) if watts > 0][:2]
+    assert len(running) == 2
+    again = recommend(
+        FloRerunRequest(
+            params=oak_request(),
+            hp_forced_on_steps=[],
+            hp_forced_off_steps=running,
+        )
+    )
+    for solved in again.optimal_path_list:
+        assert solved.hp_avg_w_list[running[0]] == 0
+        assert solved.hp_avg_w_list[running[1]] == 0
+    _, again_charged = _cheapest(again)
+    assert again_charged.path_cost_usd > charged.path_cost_usd
+
+
+def test_forced_on_steps_run_at_the_heat_pumps_maximum() -> None:
+    """A cold store has room for a full step of heat, so forcing the first
+    step on (the heat pump starts off) is the turn-on-derated maximum: the
+    nameplate with HpTurnOnMinutes taken off the front. The action grid
+    lands on the nearest step under that."""
+    request = oak_request().model_copy(
+        update={
+            "initial_top_temp_f": 80.0,
+            "initial_middle_temp_f": 75.0,
+            "initial_bottom_temp_f": 70.0,
+            "hp_currently_on": False,
+        }
+    )
+    again = recommend(
+        FloRerunRequest(params=request, hp_forced_on_steps=[0], hp_forced_off_steps=[])
+    )
+    derated = round(
+        request.hp_max_kw_el * (1 - request.hp_turn_on_minutes / 60) * 1000
+    )
+    for solved in again.optimal_path_list:
+        watts = solved.hp_avg_w_list[0]
+        assert abs(watts - derated) <= 40, watts

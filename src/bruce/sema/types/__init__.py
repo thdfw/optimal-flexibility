@@ -2,6 +2,7 @@ from bruce.sema.types.flo_optimal_path import FloOptimalPath
 from bruce.sema.types.flo_params import FloParams
 from bruce.sema.types.flo_path_penalties_bruce import FloPathPenaltiesBruce
 from bruce.sema.types.flo_recommendation import FloRecommendation
+from bruce.sema.types.flo_rerun_request import FloRerunRequest
 from bruce.sema.types.flo_tank_store_path import FloTankStorePath
 from bruce.sema.types.flo_tuning_alice import FloTuningAlice
 from bruce.sema.types.flo_tuning_bruce import FloTuningBruce
@@ -12,6 +13,7 @@ __all__ = [
     "FloParams",
     "FloPathPenaltiesBruce",
     "FloRecommendation",
+    "FloRerunRequest",
     "FloTankStorePath",
     "FloTuningAlice",
     "FloTuningBruce",

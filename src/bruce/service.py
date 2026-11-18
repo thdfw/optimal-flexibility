@@ -1,12 +1,14 @@
 """The FLO boundary: one request word in, one recommendation word out.
 
 ``recommend`` is the one callable a caller imports from bruce. It takes a
-``flo.params`` whose ``Tuning`` is ``flo.tuning.bruce``, builds the
-heat-pump-and-tank asset and its graph, solves, and answers with a
-``flo.recommendation`` that is complete over prices: one PQ pair per
-quantity change from the market ceiling down, and beside each pair the
-plan its edge leads to, the tank store along that plan with its empty and
-full energies, and the penalties and total cost bruce charged along it. The real-time price is never seen here; the
+``flo.params`` whose ``Tuning`` is ``flo.tuning.bruce``, or a
+``flo.rerun.request`` that wraps one and names the heat-pump steps to
+force on or off, builds the heat-pump-and-tank asset and its graph,
+solves, and answers with a ``flo.recommendation`` that is complete over
+prices: one PQ pair per quantity change from the market ceiling down, and
+beside each pair the plan its edge leads to, the tank store along that
+plan with its empty and full energies, and the penalties and total cost
+bruce charged along it. The real-time price is never seen here; the
 caller picks the cleared pair off the recommendation it holds.
 
 The graph is built and discarded per call. Nothing spans calls except the
@@ -37,6 +39,7 @@ from bruce.sema.types import (
     FloParams,
     FloPathPenaltiesBruce,
     FloRecommendation,
+    FloRerunRequest,
     FloTankStorePath,
     FloTuningBruce,
     PriceQuantityUnitless,
@@ -84,10 +87,18 @@ def thermocline_layer(sensor_position: int, sensors: int, num_layers: int) -> in
     return max(1, round(sensor_position * num_layers / sensors))
 
 
-def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
+def params_from_request(
+    request: FloParams,
+    *,
+    hp_forced_on_steps: list[int] | None = None,
+    hp_forced_off_steps: list[int] | None = None,
+) -> HeatPumpWaterTankParams:
     """Spell the request as bruce's own params. The store is modeled at the
     tuning's resolution, NumLayers, and the thermoclines the house observed
-    in sensor positions are mapped onto those layers."""
+    in sensor positions are mapped onto those layers. ``hp_forced_on_steps``
+    and ``hp_forced_off_steps`` are 0-based steps of this request where the
+    heat pump must run or stay off; a ``flo.params`` itself does not carry
+    them."""
     tuning = request.tuning
     if not isinstance(tuning, FloTuningBruce):
         raise TypeError(f"bruce answers flo.tuning.bruce, not {tuning.type_name}")
@@ -166,7 +177,23 @@ def params_from_request(request: FloParams) -> HeatPumpWaterTankParams:
         rswt_f=list(request.rswt_f_list),
         load_kwh=list(request.load_kwh_list),
         oat_f=list(request.oat_f_list),
+        hp_forced_on_steps=list(hp_forced_on_steps or []),
+        hp_forced_off_steps=list(hp_forced_off_steps or []),
     )
+
+
+def flo_to_solve(request: FloParams | FloRerunRequest) -> tuple[FloParams, list[int], list[int]]:
+    """The ``flo.params`` bruce solves, and the steps a re-run forces on or
+    off. A ``flo.rerun.request`` whose params are at a version this snapshot
+    does not read raises; the message names both versions."""
+    if isinstance(request, FloRerunRequest):
+        flo = request.params
+        if not isinstance(flo, FloParams):
+            raise ValueError(
+                f"bruce reads flo.params {FloParams.version_value()} and this is {flo.version}"
+            )
+        return flo, list(request.hp_forced_on_steps), list(request.hp_forced_off_steps)
+    return request, [], []
 
 
 def store_wh_at(temp_f: float, params: HeatPumpWaterTankParams) -> int:
@@ -256,21 +283,26 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
     )
 
 
-def recommend(request: FloParams) -> FloRecommendation:
-    """Answer one request. The bid curve descends from the market ceiling
-    (``Graph.generate_bid``); the first pair sits at the request's own
-    PriceMaxUsdMwh (flo.recommendation axiom 1) and each pair's path is
-    the first-step edge that pair's price selects (axiom 3)."""
-    params = params_from_request(request)
+def recommend(request: FloParams | FloRerunRequest) -> FloRecommendation:
+    """Answer one request. A ``flo.params`` solves as the FLO service does.
+    A ``flo.rerun.request`` solves the same way with the heat pump forced
+    on or off at the steps the word names. The bid curve descends from the
+    market ceiling (``Graph.generate_bid``); the first pair sits at the
+    request's own PriceMaxUsdMwh (flo.recommendation axiom 1) and each
+    pair's path is the first-step edge that pair's price selects (axiom 3)."""
+    flo, forced_on, forced_off = flo_to_solve(request)
+    params = params_from_request(
+        flo, hp_forced_on_steps=forced_on, hp_forced_off_steps=forced_off
+    )
     graph = Graph(HeatPumpWaterTankAsset(params))
     graph.find_shortest_path()
     pairs = graph.generate_bid(forecast_price_mwh=params.elec_price_mwh[0])
     pq_pairs: list[PriceQuantityUnitless] = []
     words: list[PathWords] = []
     for i, pair in enumerate(pairs):
-        price_mwh = request.price_max_usd_mwh if i == 0 else pair.price_mwh
+        price_mwh = flo.price_max_usd_mwh if i == 0 else pair.price_mwh
         first = graph.best_edge_at_price(pair.price_mwh)
-        for_pair = path_words(graph, request, first)
+        for_pair = path_words(graph, flo, first)
         pq_pairs.append(
             PriceQuantityUnitless(
                 price_x1000=round(price_mwh * 1000),
@@ -279,7 +311,7 @@ def recommend(request: FloParams) -> FloRecommendation:
         )
         words.append(for_pair)
     return FloRecommendation(
-        bidder_alias=request.g_node_alias,
+        bidder_alias=flo.g_node_alias,
         pq_pairs=pq_pairs,
         price_unit=MarketPriceUnit.USDPerMWh,
         quantity_unit=MarketQuantityUnit.AvgkW,
