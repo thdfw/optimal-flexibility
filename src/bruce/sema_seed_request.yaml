@@ -12,6 +12,7 @@
 # second version of a word in behind the pinned one. The tuning words,
 # flo.optimal.path, price.quantity.unitless and the enums and formats
 # arrive through the closure of the two roots.
+# flo.rerun.request also pins 000.
 
 local_names:
   strip_prefixes: [gw1, gw]
@@ -19,9 +20,9 @@ local_names:
 initial_targets:
   types:
     flo.params:
-      versions: ["002"]
+      versions: ["003"]
     flo.recommendation:
-      versions: ["001"]
+      versions: ["002"]
     # Body of POST …/flo.rerun once bruce reads flo.rerun.request.
     flo.rerun.request:
-      versions: ["000"]
+      versions: ["000", "001"]

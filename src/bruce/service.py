@@ -151,6 +151,8 @@ def params_from_request(
         rswt_penalty_decay=tuning.rswt_penalty_decay,
         rswt_penalty_exponent_rate=tuning.rswt_penalty_exponent_rate,
         rswt_penalty_decay_max_hour=tuning.rswt_penalty_decay_max_hour,
+        unmet_load_penalty_enabled=tuning.unmet_load_penalty_enabled,
+        unmet_load_penalty_weight=tuning.unmet_load_penalty_weight,
         short_cycle_penalty_enabled=tuning.short_cycle_penalty_enabled,
         short_cycle_penalty_weight=tuning.short_cycle_penalty_weight,
         stability_penalty_enabled=tuning.stability_penalty_enabled,
@@ -217,10 +219,10 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
     onward (``Graph.rollout``), each step at the head the rollout takes.
     Per step, the heat pump's average watts and the store at the end of the
     step (energy, the three band temperatures, the two thermoclines as
-    layers of the tuning's NumLayers), and the three penalties the step
+    layers of the tuning's NumLayers), and the four penalties the step
     is charged at that head; the terminal cost is the last head's, and the
     path cost is every step's cost at its head (electricity at the
-    request's prices plus the three penalties) plus that terminal cost.
+    request's prices plus the four penalties) plus that terminal cost.
     Every list has the number of steps the path reaches."""
     asset = graph.asset
     if not isinstance(asset, HeatPumpWaterTankAsset):
@@ -234,6 +236,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
     thermocline1: list[int] = []
     thermocline2: list[int] = []
     rswt: list[float] = []
+    unmet_load: list[float] = []
     stability: list[float] = []
     short_cycle: list[float] = []
     steps_cost = 0.0
@@ -251,6 +254,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
         thermocline1.append(end.thermocline1)
         thermocline2.append(end.thermocline2)
         rswt.append(asset.rswt_penalty(start, end, edge.action, t))
+        unmet_load.append(asset.unmet_load_penalty(start, end, edge.action, t))
         stability.append(asset.stability_penalty(t, edge.elec_used_kwh))
         short_cycle.append(asset.short_cycle_penalty(start, edge.action, t, edge.tail.mode))
     n = len(hp_avg_w)
@@ -274,6 +278,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
         ),
         penalties=FloPathPenaltiesBruce(
             rswt_penalty_usd_list=rswt,
+            unmet_load_penalty_usd_list=unmet_load,
             stability_penalty_usd_list=stability,
             short_cycle_penalty_usd_list=short_cycle,
             terminal_cost_usd=terminal_cost,

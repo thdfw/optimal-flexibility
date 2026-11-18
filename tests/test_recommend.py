@@ -68,6 +68,8 @@ def oak_request() -> FloParams:
             rswt_penalty_decay=0.9,
             rswt_penalty_exponent_rate=0.15,
             rswt_penalty_decay_max_hour=12,
+            unmet_load_penalty_enabled=True,
+            unmet_load_penalty_weight=10.0,
             short_cycle_penalty_enabled=True,
             short_cycle_penalty_weight=6.0,
             stability_penalty_enabled=True,
@@ -211,10 +213,10 @@ def test_a_rerun_of_an_older_params_names_the_version_bruce_reads() -> None:
             "HpForcedOnSteps": [],
             "HpForcedOffSteps": [],
             "TypeName": "flo.rerun.request",
-            "Version": "000",
+            "Version": "001",
         }
     )
-    with pytest.raises(ValueError, match="bruce reads flo.params 002 and this is 001"):
+    with pytest.raises(ValueError, match="bruce reads flo.params 003 and this is 001"):
         flo_to_solve(request)
 
 

@@ -8,9 +8,9 @@ from bruce.sema.property_format import UTCMilliseconds
 from bruce.sema.property_format import UTCSeconds
 from bruce.sema.property_format import UUID4Str
 from bruce.sema.types.flo_optimal_path import FloOptimalPath
-from bruce.sema.types.flo_params import FloParams
 from bruce.sema.types.flo_tuning_alice import FloTuningAlice
-from bruce.sema.types.flo_tuning_bruce import FloTuningBruce
+from bruce.sema.types.old_versions.flo_params_002 import FloParams002
+from bruce.sema.types.old_versions.flo_tuning_bruce_001 import FloTuningBruce001
 
 
 class FloParams001(SemaType):
@@ -48,7 +48,7 @@ class FloParams001(SemaType):
     price_min_usd_mwh: StrictFloat
     previous_optimal_path: FloOptimalPath | None = None
     previous_estimate_elec_usd_mwh_now: StrictFloat | None = None
-    tuning: FloTuningAlice | FloTuningBruce
+    tuning: FloTuningAlice | FloTuningBruce001
     type_name: Literal["flo.params"] = "flo.params"
     version: Literal["001"] = "001"
 
@@ -134,14 +134,14 @@ class FloParams001(SemaType):
             )
         return self
 
-    def upgrade(self) -> FloParams:
+    def upgrade(self) -> FloParams002:
         """
         - PriceUsdMwhList: add, in place of LmpUsdMwhList and DistUsdMwhList
         - PriceForecastId: add
         """
         raise SemaType.upgrade_requires_context(
             "FloParams001 cannot be upgraded to "
-            "FloParams without context: v002 adds the "
+            "FloParams002 without context: v002 adds the "
             "required PriceForecastId, the identity of the price forecast the "
             "price list was read from, which a v001 message does not state "
             "and which SHALL NOT be fabricated."
