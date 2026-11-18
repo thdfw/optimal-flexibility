@@ -27,13 +27,15 @@ class FloParamsError(ValueError):
     """The payload is not a bruce ``flo.params``."""
 
 
-# ``flo.tuning.bruce`` fields that switch and tune the RSWT, short-cycle and stability penalties.
+# ``flo.tuning.bruce`` fields that switch and tune the RSWT, unmet-load, short-cycle and stability penalties.
 FLO_PENALTY_TUNING_KEYS = (
     "RswtPenaltyEnabled",
     "RswtPenaltyWeight",
     "RswtPenaltyDecay",
     "RswtPenaltyExponentRate",
     "RswtPenaltyDecayMaxHour",
+    "UnmetLoadPenaltyEnabled",
+    "UnmetLoadPenaltyWeight",
     "ShortCyclePenaltyEnabled",
     "ShortCyclePenaltyWeight",
     "StabilityPenaltyEnabled",
@@ -108,6 +110,8 @@ class _FloTuningBruce(BaseModel):
     RswtPenaltyDecay: float
     RswtPenaltyExponentRate: float
     RswtPenaltyDecayMaxHour: int
+    UnmetLoadPenaltyEnabled: bool
+    UnmetLoadPenaltyWeight: float
     ShortCyclePenaltyEnabled: bool
     ShortCyclePenaltyWeight: float
     StabilityPenaltyEnabled: bool
@@ -306,6 +310,8 @@ def _heat_pump_params(
         rswt_penalty_decay=tuning.RswtPenaltyDecay,
         rswt_penalty_exponent_rate=tuning.RswtPenaltyExponentRate,
         rswt_penalty_decay_max_hour=tuning.RswtPenaltyDecayMaxHour,
+        unmet_load_penalty_enabled=tuning.UnmetLoadPenaltyEnabled,
+        unmet_load_penalty_weight=tuning.UnmetLoadPenaltyWeight,
         short_cycle_penalty_enabled=tuning.ShortCyclePenaltyEnabled,
         short_cycle_penalty_weight=tuning.ShortCyclePenaltyWeight,
         stability_penalty_enabled=tuning.StabilityPenaltyEnabled,

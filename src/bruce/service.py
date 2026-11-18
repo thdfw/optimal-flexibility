@@ -34,6 +34,7 @@ from bruce.graph_optimizer.assets.heat_pump_water_tank import (
 from bruce.graph_optimizer.assets.heat_pump_water_tank.state import compute_energy
 from bruce.graph_optimizer.graph import Edge
 from bruce.sema.enums import MarketPriceUnit, MarketQuantityUnit
+from bruce.sema.codec import SemaCodec
 from bruce.sema.types import (
     FloOptimalPath,
     FloParams,
@@ -44,6 +45,7 @@ from bruce.sema.types import (
     FloTuningBruce,
     PriceQuantityUnitless,
 )
+from bruce.sema.types.old_versions.flo_params_002 import FloParams002
 
 FLO_NAME = "bruce"
 FLO_REPO = "github.com/thdfw/optimal-flexibility"
@@ -151,6 +153,8 @@ def params_from_request(
         rswt_penalty_decay=tuning.rswt_penalty_decay,
         rswt_penalty_exponent_rate=tuning.rswt_penalty_exponent_rate,
         rswt_penalty_decay_max_hour=tuning.rswt_penalty_decay_max_hour,
+        unmet_load_penalty_enabled=tuning.unmet_load_penalty_enabled,
+        unmet_load_penalty_weight=tuning.unmet_load_penalty_weight,
         short_cycle_penalty_enabled=tuning.short_cycle_penalty_enabled,
         short_cycle_penalty_weight=tuning.short_cycle_penalty_weight,
         stability_penalty_enabled=tuning.stability_penalty_enabled,
@@ -217,10 +221,10 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
     onward (``Graph.rollout``), each step at the head the rollout takes.
     Per step, the heat pump's average watts and the store at the end of the
     step (energy, the three band temperatures, the two thermoclines as
-    layers of the tuning's NumLayers), and the three penalties the step
+    layers of the tuning's NumLayers), and the four penalties the step
     is charged at that head; the terminal cost is the last head's, and the
     path cost is every step's cost at its head (electricity at the
-    request's prices plus the three penalties) plus that terminal cost.
+    request's prices plus the four penalties) plus that terminal cost.
     Every list has the number of steps the path reaches."""
     asset = graph.asset
     if not isinstance(asset, HeatPumpWaterTankAsset):
@@ -234,6 +238,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
     thermocline1: list[int] = []
     thermocline2: list[int] = []
     rswt: list[float] = []
+    unmet_load: list[float] = []
     stability: list[float] = []
     short_cycle: list[float] = []
     steps_cost = 0.0
@@ -251,6 +256,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
         thermocline1.append(end.thermocline1)
         thermocline2.append(end.thermocline2)
         rswt.append(asset.rswt_penalty(start, end, edge.action, t))
+        unmet_load.append(asset.unmet_load_penalty(start, end, edge.action, t))
         stability.append(asset.stability_penalty(t, edge.elec_used_kwh))
         short_cycle.append(asset.short_cycle_penalty(start, edge.action, t, edge.tail.mode))
     n = len(hp_avg_w)
@@ -274,6 +280,7 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
         ),
         penalties=FloPathPenaltiesBruce(
             rswt_penalty_usd_list=rswt,
+            unmet_load_penalty_usd_list=unmet_load,
             stability_penalty_usd_list=stability,
             short_cycle_penalty_usd_list=short_cycle,
             terminal_cost_usd=terminal_cost,
@@ -325,8 +332,27 @@ def recommend(request: FloParams | FloRerunRequest) -> FloRecommendation:
     )
 
 
+def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
+    """The ``flo.params`` bruce solves. A 002 request is lifted to 003 and
+    its unmet-load penalty stays off. A 001 request names no price forecast,
+    so it is refused; the message names both versions."""
+    try:
+        data = json.loads(request_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise ValueError(f"Invalid JSON: {e}") from e
+    word = SemaCodec().from_dict(data, auto_upgrade=False)
+    if isinstance(word, FloParams):
+        return word
+    if isinstance(word, FloParams002):
+        return word.upgrade()
+    raise ValueError(
+        f"bruce reads flo.params {FloParams.version_value()} and this is {getattr(word, 'version', None)}"
+    )
+
+
 def recommend_bytes(request_bytes: bytes) -> bytes:
     """The boundary as bytes: ``flo.params`` JSON in, ``flo.recommendation``
     JSON out. A caller holds its own twin of each word and nothing of
-    bruce's; this is the one call an LTN or a service makes."""
-    return recommend(FloParams.from_bytes(request_bytes)).to_bytes()
+    bruce's; this is the one call an LTN or a service makes. A 002 request
+    is lifted to 003 before it is solved."""
+    return recommend(flo_params_from_bytes(request_bytes)).to_bytes()

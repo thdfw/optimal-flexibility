@@ -28,6 +28,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def __init__(self, params: HeatPumpWaterTankParams):
         super().__init__(params)
         self._refresh_horizon_median_elec_price_kwh()
+        self._refresh_max_heat_price_kwh()
         self._compute_difference_with_plans()
         self._available_actions_cache: list[
             dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]]
@@ -38,6 +39,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def on_params_updated(self) -> None:
         logger.info(json.dumps(self.params.model_dump(mode="json"), separators=(",", ":")))
         self._refresh_horizon_median_elec_price_kwh()
+        self._refresh_max_heat_price_kwh()
         self._compute_difference_with_plans()
         self._fill_to_full_action_by_state = {}
         self._build_available_actions_cache()
@@ -57,6 +59,16 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         """Median step electricity price over the horizon ($/kWh)."""
         prices_kwh = [p / 1000 for p in self.params.elec_price_mwh]
         self._horizon_median_elec_price_kwh = self._median_kwh(prices_kwh)
+
+    def _refresh_max_heat_price_kwh(self) -> None:
+        """Most expensive heat pump heat over the horizon ($/kWh thermal)."""
+        self._max_heat_price_kwh = max(
+            0.0,
+            max(
+                (p / 1000 / self.params.COP(oat) for p, oat in zip(self.params.elec_price_mwh, self.params.oat_f)),
+                default=0.0,
+            ),
+        )
 
     @property
     def name(self) -> str:
@@ -138,6 +150,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             self.params.num_layers,
             self.params,
         ).energy
+        self.lowest_state_energy = min(state.energy for state in states)
         return states
 
     def get_action_space(self) -> list[HeatPumpWaterTankAction]:
@@ -177,7 +190,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         energy = state.energy
         dt = self.params.timestep_duration_hours[time_step]
         load = self.params.load_kwh[time_step]
-        losses = self.params.storage_losses_percent / 100 * (energy - self.min_state_energy) * dt
+        losses = self._losses_kwh(state, time_step)
         max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode)
         min_short_cycle_heat = (
             self.params.hp_min_kw_elec * dt * self.params.COP(self.params.oat_f[time_step])
@@ -286,10 +299,13 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         action: HeatPumpWaterTankAction,
         time_step: int,
     ) -> float:
-        dt = self.params.timestep_duration_hours[time_step]
         load = self.params.load_kwh[time_step]
-        losses = self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
+        losses = self._losses_kwh(state, time_step)
         return max(0.0, load + losses + action.heat_to_store_kwh)
+
+    def _losses_kwh(self, state: HeatPumpWaterTankState, time_step: int) -> float:
+        dt = self.params.timestep_duration_hours[time_step]
+        return self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
 
     def _max_hp_heat_out_kwh(self, time_step: int, mode: int) -> float:
         dt = self.params.timestep_duration_hours[time_step]
@@ -512,6 +528,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         # RSWT penalty
         cost += self.rswt_penalty(state, next_state, action, time_step)
 
+        # Unmet load penalty
+        cost += self.unmet_load_penalty(state, next_state, action, time_step)
+
         # Plan stability penalty
         cost += self.stability_penalty(time_step, hp_kwh_el)
 
@@ -651,6 +670,24 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             * shortfall
         )
 
+    def unmet_load_penalty(
+        self,
+        state: HeatPumpWaterTankState,
+        next_state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> float:
+        """Load the storage is credited with supplying but cannot, because the discharge would take it
+        below the coldest state in the state space. Losses come out of this first, since a storage at
+        the floor has no losses to give."""
+        if not self.params.unmet_load_penalty_enabled or action.heat_to_store_kwh >= 0:
+            return 0.0
+        target = state.energy + action.heat_to_store_kwh
+        if target >= self.lowest_state_energy:
+            return 0.0
+        unmet_load_kwh = max(0.0, next_state.energy - target - self._losses_kwh(state, time_step))
+        return self.params.unmet_load_penalty_weight * self._max_heat_price_kwh * unmet_load_kwh
+
     def layers_drawn(
         self,
         state: HeatPumpWaterTankState,
@@ -667,7 +704,8 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         Each layer drawn is returned to the bottom at RWT, so once all original layers have been drawn,
         the returned water is drawn next, in the order it came back. Once the water drawn is too cold
-        to give any heat, the rest of energy_kwh is counted at COLDEST_TANK_TEMP_F.
+        to give any heat, the rest of energy_kwh is left uncounted: that undeliverable heat is priced
+        by the unmet-load penalty, not as water drawn below RSWT.
         """
         layer_kwh_per_f = self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
         rswt_layer_kwh = layer_kwh_per_f * (rswt - self.params.rwt(rswt, load_bucket))
@@ -682,7 +720,6 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 rwt = self.params.rwt(temp, load_bucket)
                 layer_kwh = layer_kwh_per_f * (temp - rwt)
                 if layer_kwh <= 0:
-                    drawn.append((COLDEST_TANK_TEMP_F, remaining_kwh / rswt_layer_kwh))
                     return drawn
                 supplied_kwh = min(remaining_kwh, layer_kwh)
                 drawn.append((temp, supplied_kwh / rswt_layer_kwh))

@@ -11,9 +11,11 @@ types:
         summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
 
   flo.params:
-    latest_version: "002"
+    latest_version: "003"
     versioning_strategy: "literal"
     versions:
+      "003":
+        summary: "- Tuning: flo.tuning.bruce 001 -> 002"
       "002":
         summary: >
           - PriceUsdMwhList: add, in place of LmpUsdMwhList and DistUsdMwhList
@@ -22,25 +24,25 @@ types:
         summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
 
   flo.path.penalties.bruce:
-    latest_version: "000"
-    versioning_strategy: "literal"
-    versions:
-      "000":
-        summary: "RswtPenaltyUsdList, StabilityPenaltyUsdList, ShortCyclePenaltyUsdList (USD per step), TerminalCostUsd, TerminalCostEmptyStoreUsd, PathCostUsd; axioms PenaltyListLengths, TerminalCostBound."
-
-  flo.recommendation:
     latest_version: "001"
     versioning_strategy: "literal"
     versions:
       "001":
-        summary: >
-          - StoreStateList: add (optional, oneOf flo.tank.store.path)
-          - PathPenaltiesList: add (optional, oneOf flo.path.penalties.bruce)
+        summary: "- UnmetLoadPenaltyUsdList: add, assigned zeros"
 
-  flo.rerun.request:
-    latest_version: "000"
+  flo.recommendation:
+    latest_version: "002"
     versioning_strategy: "literal"
     versions:
+      "002":
+        summary: "- PathPenaltiesList: flo.path.penalties.bruce 000 -> 001"
+
+  flo.rerun.request:
+    latest_version: "001"
+    versioning_strategy: "literal"
+    versions:
+      "001":
+        summary: "- Params: a flo.params 002 is lifted to 003, its unmet-load penalty off"
       "000":
         summary: "Params (oneOf flo.params 001, 002), HpForcedOnSteps and HpForcedOffSteps (non.negative.int, 0 is first step); axioms ForcedStepsWithinHorizon, ForcedOnOffDisjoint."
 
@@ -59,9 +61,13 @@ types:
         summary: "TypeName and Version only."
 
   flo.tuning.bruce:
-    latest_version: "001"
+    latest_version: "002"
     versioning_strategy: "literal"
     versions:
+      "002":
+        summary: >
+          - UnmetLoadPenaltyEnabled: add, assigned false
+          - UnmetLoadPenaltyWeight: add, assigned 10
       "001":
         summary: "- NumLayers: add"
 

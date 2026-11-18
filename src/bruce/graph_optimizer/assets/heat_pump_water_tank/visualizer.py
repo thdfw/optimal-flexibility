@@ -148,6 +148,7 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     sp_hp_heat_out_kw: list[float] = []
     sp_stored_energy: list[float] = []
     sp_rswt_penalty: list[float] = []
+    sp_unmet_load_penalty: list[float] = []
     sp_stability_penalty: list[float] = []
     sp_short_cycle_penalty: list[float] = []
 
@@ -161,6 +162,7 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
                 dt = params.timestep_duration_hours[t]
                 sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
             sp_rswt_penalty.append(0.0)
+            sp_unmet_load_penalty.append(0.0)
             sp_stability_penalty.append(0.0)
             sp_short_cycle_penalty.append(0.0)
         else:
@@ -171,6 +173,9 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
             sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
+            sp_unmet_load_penalty.append(
+                asset.unmet_load_penalty(node.state, path_nodes[i + 1].state, edge.action, t)
+            )
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
             sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
 
@@ -257,6 +262,7 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     ]
 
     rswt_vals = [float(v) for v in sp_rswt_penalty[:-1]]
+    unmet_vals = [float(v) for v in sp_unmet_load_penalty[:-1]]
     stab_vals = [float(v) for v in sp_stability_penalty[:-1]]
     short_vals = [float(v) for v in sp_short_cycle_penalty[:-1]]
     sp_time_mid = [
@@ -282,6 +288,8 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
 
     if params.rswt_penalty_enabled:
         push_penalty("RSWT penalty", "rgba(255,127,14,0.7)", rswt_vals)
+    if params.unmet_load_penalty_enabled:
+        push_penalty("Unmet load penalty", "rgba(214,39,40,0.7)", unmet_vals)
     if params.stability_penalty_enabled:
         push_penalty("Stability penalty", "rgba(148,103,189,0.7)", stab_vals)
     if params.short_cycle_penalty_enabled:
@@ -296,6 +304,8 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     per_series_max: list[float] = []
     if params.rswt_penalty_enabled:
         per_series_max.append(max(rswt_vals, default=0.0))
+    if params.unmet_load_penalty_enabled:
+        per_series_max.append(max(unmet_vals, default=0.0))
     if params.stability_penalty_enabled:
         per_series_max.append(max(stab_vals, default=0.0))
     if params.short_cycle_penalty_enabled:
@@ -307,6 +317,8 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
         total = 0.0
         if params.rswt_penalty_enabled:
             total += rswt_vals[i]
+        if params.unmet_load_penalty_enabled:
+            total += unmet_vals[i]
         if params.stability_penalty_enabled:
             total += stab_vals[i]
         if params.short_cycle_penalty_enabled:
@@ -383,6 +395,7 @@ def plot_graph_results(
     sp_hp_heat_out_kw: list[float] = []
     sp_stored_energy: list[float] = []
     sp_rswt_penalty: list[float] = []
+    sp_unmet_load_penalty: list[float] = []
     sp_stability_penalty: list[float] = []
     sp_short_cycle_penalty: list[float] = []
 
@@ -396,6 +409,7 @@ def plot_graph_results(
                 dt = params.timestep_duration_hours[t]
                 sp_hp_heat_out_kw.append(_hp_heat_out_kwh(asset, last_edge.tail.state, last_edge.action, t) / dt)
             sp_rswt_penalty.append(0.0)
+            sp_unmet_load_penalty.append(0.0)
             sp_stability_penalty.append(0.0)
             sp_short_cycle_penalty.append(0.0)
         else:
@@ -406,6 +420,9 @@ def plot_graph_results(
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
             sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
+            sp_unmet_load_penalty.append(
+                asset.unmet_load_penalty(node.state, path_nodes[i + 1].state, edge.action, t)
+            )
             sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
             sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
 
@@ -585,6 +602,7 @@ def plot_graph_results(
     ]
     bar_width_penalty_days = [timedelta(hours=params.timestep_duration_hours[t]) * 0.9 for t in range(params.horizon)]
     rswt_vals = sp_rswt_penalty[:-1]
+    unmet_vals = sp_unmet_load_penalty[:-1]
     stab_vals = sp_stability_penalty[:-1]
     short_vals = sp_short_cycle_penalty[:-1]
     terminal_vals = [0.0] * len(sp_time_mid)
@@ -603,6 +621,17 @@ def plot_graph_results(
             label="RSWT penalty",
         )
         stack_bottom = [b + v for b, v in zip(stack_bottom, rswt_vals)]
+    if params.unmet_load_penalty_enabled:
+        ax[2].bar(
+            sp_time_mid,
+            unmet_vals,
+            bottom=stack_bottom,
+            width=bar_width_penalty_days,
+            color="tab:red",
+            alpha=0.7,
+            label="Unmet load penalty",
+        )
+        stack_bottom = [b + v for b, v in zip(stack_bottom, unmet_vals)]
     if params.stability_penalty_enabled:
         ax[2].bar(
             sp_time_mid,
@@ -643,6 +672,8 @@ def plot_graph_results(
     per_series_max: list[float] = []
     if params.rswt_penalty_enabled:
         per_series_max.append(max(rswt_vals, default=0.0))
+    if params.unmet_load_penalty_enabled:
+        per_series_max.append(max(unmet_vals, default=0.0))
     if params.stability_penalty_enabled:
         per_series_max.append(max(stab_vals, default=0.0))
     if params.short_cycle_penalty_enabled:
@@ -655,6 +686,8 @@ def plot_graph_results(
         total = 0.0
         if params.rswt_penalty_enabled:
             total += rswt_vals[i]
+        if params.unmet_load_penalty_enabled:
+            total += unmet_vals[i]
         if params.stability_penalty_enabled:
             total += stab_vals[i]
         if params.short_cycle_penalty_enabled:
