@@ -8,33 +8,41 @@ types:
       - flo.params:001
       - flo.params:002
       - flo.params:003
-      - flo.recommendation:002
+      - flo.params:004
+      - flo.recommendation:003
   flo.params:
     '001':
       used_by:
       - flo.rerun.request:000
       - flo.rerun.request:001
+      - flo.rerun.request:002
     '002':
       used_by:
       - flo.rerun.request:000
       - flo.rerun.request:001
+      - flo.rerun.request:002
     '003':
       used_by:
       - flo.rerun.request:001
-  flo.path.penalties.bruce:
-    '001':
+      - flo.rerun.request:002
+    '004':
       used_by:
-      - flo.recommendation:002
+      - flo.rerun.request:002
+  flo.path.penalties.bruce:
+    '002':
+      used_by:
+      - flo.recommendation:003
   flo.tank.store.path:
     '000':
       used_by:
-      - flo.recommendation:002
+      - flo.recommendation:003
   flo.tuning.alice:
     '000':
       used_by:
       - flo.params:001
       - flo.params:002
       - flo.params:003
+      - flo.params:004
   flo.tuning.bruce:
     '001':
       used_by:
@@ -43,10 +51,13 @@ types:
     '002':
       used_by:
       - flo.params:003
+    '003':
+      used_by:
+      - flo.params:004
   price.quantity.unitless:
     '001':
       used_by:
-      - flo.recommendation:002
+      - flo.recommendation:003
 enums:
   gw1.seasonal.storage.mode:
     '000':
@@ -54,56 +65,65 @@ enums:
       - flo.params:001
       - flo.params:002
       - flo.params:003
+      - flo.params:004
   market.price.unit:
     '000':
       used_by:
-      - flo.recommendation:002
+      - flo.recommendation:003
   market.quantity.unit:
     '000':
       used_by:
-      - flo.recommendation:002
+      - flo.recommendation:003
 formats:
   git.commit:
     used_by:
-    - flo.recommendation:002
+    - flo.recommendation:003
   left.right.dot:
     used_by:
     - flo.params:001
     - flo.params:002
     - flo.params:003
-    - flo.recommendation:002
+    - flo.params:004
+    - flo.recommendation:003
   non.empty.string:
     used_by:
-    - flo.recommendation:002
+    - flo.recommendation:003
   non.negative.int:
     used_by:
     - flo.rerun.request:000
     - flo.rerun.request:001
+    - flo.rerun.request:002
     - flo.tuning.bruce:001
     - flo.tuning.bruce:002
+    - flo.tuning.bruce:003
   positive.int:
     used_by:
     - flo.optimal.path:000
     - flo.params:001
     - flo.params:002
     - flo.params:003
+    - flo.params:004
     - flo.tank.store.path:000
     - flo.tuning.bruce:001
     - flo.tuning.bruce:002
+    - flo.tuning.bruce:003
   utc.milliseconds:
     used_by:
     - flo.params:001
     - flo.params:002
     - flo.params:003
-    - flo.recommendation:002
+    - flo.params:004
+    - flo.recommendation:003
   utc.seconds:
     used_by:
     - flo.optimal.path:000
     - flo.params:001
     - flo.params:002
     - flo.params:003
+    - flo.params:004
   uuid4.str:
     used_by:
     - flo.params:001
     - flo.params:002
     - flo.params:003
+    - flo.params:004

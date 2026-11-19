@@ -3,7 +3,7 @@ from pydantic import StrictFloat, model_validator
 from bruce.sema.base import SemaType
 from bruce.sema.property_format import NonNegativeInt
 from bruce.sema.property_format import PositiveInt
-from bruce.sema.types.flo_tuning_bruce import FloTuningBruce
+from bruce.sema.types.old_versions.flo_tuning_bruce_002 import FloTuningBruce002
 
 
 class FloTuningBruce001(SemaType):
@@ -73,7 +73,7 @@ class FloTuningBruce001(SemaType):
             )
         return self
 
-    def upgrade(self) -> FloTuningBruce:
+    def upgrade(self) -> FloTuningBruce002:
         """
         - UnmetLoadPenaltyEnabled: add, assigned false
         - UnmetLoadPenaltyWeight: add, assigned 10
@@ -82,4 +82,4 @@ class FloTuningBruce001(SemaType):
         data["unmet_load_penalty_enabled"] = False
         data["unmet_load_penalty_weight"] = 10.0
         data["version"] = "002"
-        return FloTuningBruce.model_validate(data)
+        return FloTuningBruce002.model_validate(data)

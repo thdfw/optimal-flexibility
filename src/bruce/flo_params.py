@@ -27,15 +27,13 @@ class FloParamsError(ValueError):
     """The payload is not a bruce ``flo.params``."""
 
 
-# ``flo.tuning.bruce`` fields that switch and tune the RSWT, unmet-load, short-cycle and stability penalties.
+# ``flo.tuning.bruce`` fields that switch and tune the RSWT, short-cycle and stability penalties.
 FLO_PENALTY_TUNING_KEYS = (
     "RswtPenaltyEnabled",
     "RswtPenaltyWeight",
     "RswtPenaltyDecay",
     "RswtPenaltyExponentRate",
     "RswtPenaltyDecayMaxHour",
-    "UnmetLoadPenaltyEnabled",
-    "UnmetLoadPenaltyWeight",
     "ShortCyclePenaltyEnabled",
     "ShortCyclePenaltyWeight",
     "StabilityPenaltyEnabled",
@@ -44,6 +42,13 @@ FLO_PENALTY_TUNING_KEYS = (
     "StabilityPenaltyThresholdKwh",
     "StabilityPenaltyThresholdPriceMwh",
     "StabilityPenaltyHorizonHours",
+)
+
+# Keys of the tuning's ``Experimental`` dict this bruce commit reads: the
+# unmet-load penalty, under tuning.
+EXPERIMENTAL_PENALTY_TUNING_KEYS = (
+    "UnmetLoadPenaltyEnabled",
+    "UnmetLoadPenaltyWeight",
 )
 
 
@@ -55,20 +60,33 @@ def _tuning_dict(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def flo_penalty_tuning(payload: dict[str, Any]) -> dict[str, Any]:
-    """The ``FLO_PENALTY_TUNING_KEYS`` values of ``payload``'s Tuning."""
+    """The ``FLO_PENALTY_TUNING_KEYS`` values of ``payload``'s Tuning and the
+    ``EXPERIMENTAL_PENALTY_TUNING_KEYS`` values of its Experimental dict, flat."""
     tuning = _tuning_dict(payload)
-    return {key: tuning[key] for key in FLO_PENALTY_TUNING_KEYS if key in tuning}
+    experimental = tuning.get("Experimental", {})
+    return {
+        **{key: tuning[key] for key in FLO_PENALTY_TUNING_KEYS if key in tuning},
+        **{key: experimental[key] for key in EXPERIMENTAL_PENALTY_TUNING_KEYS if key in experimental},
+    }
 
 
 def with_penalty_tuning(payload: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
-    """A copy of ``payload`` whose Tuning takes the ``FLO_PENALTY_TUNING_KEYS`` values in ``overrides``.
+    """A copy of ``payload`` whose Tuning takes the ``FLO_PENALTY_TUNING_KEYS``
+    values in ``overrides``, and whose Experimental dict takes the
+    ``EXPERIMENTAL_PENALTY_TUNING_KEYS`` values.
 
     The values are validated when the payload is turned into params.
     """
-    unknown = sorted(set(overrides) - set(FLO_PENALTY_TUNING_KEYS))
+    unknown = sorted(set(overrides) - set(FLO_PENALTY_TUNING_KEYS) - set(EXPERIMENTAL_PENALTY_TUNING_KEYS))
     if unknown:
         raise FloParamsError(f"Not penalty tuning keys: {unknown}")
-    return {**payload, "Tuning": {**_tuning_dict(payload), **overrides}}
+    tuning = _tuning_dict(payload)
+    declared = {k: v for k, v in overrides.items() if k in FLO_PENALTY_TUNING_KEYS}
+    experimental = {k: v for k, v in overrides.items() if k in EXPERIMENTAL_PENALTY_TUNING_KEYS}
+    return {
+        **payload,
+        "Tuning": {**tuning, **declared, "Experimental": {**tuning.get("Experimental", {}), **experimental}},
+    }
 
 
 class _FloOptimalPath(BaseModel):
@@ -110,8 +128,6 @@ class _FloTuningBruce(BaseModel):
     RswtPenaltyDecay: float
     RswtPenaltyExponentRate: float
     RswtPenaltyDecayMaxHour: int
-    UnmetLoadPenaltyEnabled: bool
-    UnmetLoadPenaltyWeight: float
     ShortCyclePenaltyEnabled: bool
     ShortCyclePenaltyWeight: float
     StabilityPenaltyEnabled: bool
@@ -122,6 +138,7 @@ class _FloTuningBruce(BaseModel):
     StabilityPenaltyHorizonHours: int
     TerminalCostEnabled: bool
     TerminalCostEndWindowHours: int
+    Experimental: dict[str, Any]
 
     @model_validator(mode="after")
     def _is_bruce(self) -> Self:
@@ -310,8 +327,8 @@ def _heat_pump_params(
         rswt_penalty_decay=tuning.RswtPenaltyDecay,
         rswt_penalty_exponent_rate=tuning.RswtPenaltyExponentRate,
         rswt_penalty_decay_max_hour=tuning.RswtPenaltyDecayMaxHour,
-        unmet_load_penalty_enabled=tuning.UnmetLoadPenaltyEnabled,
-        unmet_load_penalty_weight=tuning.UnmetLoadPenaltyWeight,
+        unmet_load_penalty_enabled=tuning.Experimental["UnmetLoadPenaltyEnabled"],
+        unmet_load_penalty_weight=tuning.Experimental["UnmetLoadPenaltyWeight"],
         short_cycle_penalty_enabled=tuning.ShortCyclePenaltyEnabled,
         short_cycle_penalty_weight=tuning.ShortCyclePenaltyWeight,
         stability_penalty_enabled=tuning.StabilityPenaltyEnabled,

@@ -46,6 +46,7 @@ from bruce.sema.types import (
     PriceQuantityUnitless,
 )
 from bruce.sema.types.old_versions.flo_params_002 import FloParams002
+from bruce.sema.types.old_versions.flo_params_003 import FloParams003
 
 FLO_NAME = "bruce"
 FLO_REPO = "github.com/thdfw/optimal-flexibility"
@@ -87,6 +88,21 @@ def thermocline_layer(sensor_position: int, sensors: int, num_layers: int) -> in
     is divided into ``num_layers``: the same fraction of the store, rounded
     to a layer and never above the top one."""
     return max(1, round(sensor_position * num_layers / sensors))
+
+
+def experimental_knob[K: (bool, float, int)](tuning: FloTuningBruce, key: str, kind: type[K]) -> K:
+    """One knob of the tuning's ``Experimental`` dict, of the type this
+    bruce commit reads it as. The word declares no type for the dict's
+    values, so bruce states it here; a missing key or another type is
+    refused with the key named, since a knob under tuning has no default."""
+    if key not in tuning.experimental:
+        raise ValueError(f"flo.tuning.bruce Experimental lacks {key}")
+    value = tuning.experimental[key]
+    if kind is float and isinstance(value, int) and not isinstance(value, bool):
+        value = float(value)
+    if not isinstance(value, kind) or (kind is not bool and isinstance(value, bool)):
+        raise ValueError(f"flo.tuning.bruce Experimental {key} must be {kind.__name__}, got {value!r}")
+    return value
 
 
 def params_from_request(
@@ -153,8 +169,8 @@ def params_from_request(
         rswt_penalty_decay=tuning.rswt_penalty_decay,
         rswt_penalty_exponent_rate=tuning.rswt_penalty_exponent_rate,
         rswt_penalty_decay_max_hour=tuning.rswt_penalty_decay_max_hour,
-        unmet_load_penalty_enabled=tuning.unmet_load_penalty_enabled,
-        unmet_load_penalty_weight=tuning.unmet_load_penalty_weight,
+        unmet_load_penalty_enabled=experimental_knob(tuning, "UnmetLoadPenaltyEnabled", bool),
+        unmet_load_penalty_weight=experimental_knob(tuning, "UnmetLoadPenaltyWeight", float),
         short_cycle_penalty_enabled=tuning.short_cycle_penalty_enabled,
         short_cycle_penalty_weight=tuning.short_cycle_penalty_weight,
         stability_penalty_enabled=tuning.stability_penalty_enabled,
@@ -280,12 +296,12 @@ def path_words(graph: Graph, request: FloParams, first: Edge) -> PathWords:
         ),
         penalties=FloPathPenaltiesBruce(
             rswt_penalty_usd_list=rswt,
-            unmet_load_penalty_usd_list=unmet_load,
             stability_penalty_usd_list=stability,
             short_cycle_penalty_usd_list=short_cycle,
             terminal_cost_usd=terminal_cost,
             terminal_cost_empty_store_usd=asset.terminal_cost_full(),
             path_cost_usd=steps_cost + terminal_cost,
+            experimental={"UnmetLoadPenaltyUsdList": unmet_load},
         ),
     )
 
@@ -333,9 +349,9 @@ def recommend(request: FloParams | FloRerunRequest) -> FloRecommendation:
 
 
 def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
-    """The ``flo.params`` bruce solves. A 002 request is lifted to 003 and
-    its unmet-load penalty stays off. A 001 request names no price forecast,
-    so it is refused; the message names both versions."""
+    """The ``flo.params`` bruce solves. A 002 or 003 request is lifted to
+    004; a 002's unmet-load penalty is off. A 001 request names no price
+    forecast, so it is refused; the message names both versions."""
     try:
         data = json.loads(request_bytes)
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -344,6 +360,8 @@ def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
     if isinstance(word, FloParams):
         return word
     if isinstance(word, FloParams002):
+        return word.upgrade().upgrade()
+    if isinstance(word, FloParams003):
         return word.upgrade()
     raise ValueError(
         f"bruce reads flo.params {FloParams.version_value()} and this is {getattr(word, 'version', None)}"
@@ -353,6 +371,6 @@ def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
 def recommend_bytes(request_bytes: bytes) -> bytes:
     """The boundary as bytes: ``flo.params`` JSON in, ``flo.recommendation``
     JSON out. A caller holds its own twin of each word and nothing of
-    bruce's; this is the one call an LTN or a service makes. A 002 request
-    is lifted to 003 before it is solved."""
+    bruce's; this is the one call an LTN or a service makes. A 002 or 003
+    request is lifted to 004 before it is solved."""
     return recommend(flo_params_from_bytes(request_bytes)).to_bytes()

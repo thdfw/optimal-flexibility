@@ -11,9 +11,11 @@ types:
         summary: "StartUnixS, StepDurationMinutes, HpAvgWList (W), StoreWhList (Wh); axiom StepListLengths."
 
   flo.params:
-    latest_version: "003"
+    latest_version: "004"
     versioning_strategy: "literal"
     versions:
+      "004":
+        summary: "- Tuning: flo.tuning.bruce 002 -> 003"
       "003":
         summary: "- Tuning: flo.tuning.bruce 001 -> 002"
       "002":
@@ -24,23 +26,27 @@ types:
         summary: "- Tuning: flo.tuning.bruce 000 -> 001, NumLayers assigned as TanksModeled times TempSensorsPerTank"
 
   flo.path.penalties.bruce:
-    latest_version: "001"
-    versioning_strategy: "literal"
-    versions:
-      "001":
-        summary: "- UnmetLoadPenaltyUsdList: add, assigned zeros"
-
-  flo.recommendation:
     latest_version: "002"
     versioning_strategy: "literal"
     versions:
       "002":
-        summary: "- PathPenaltiesList: flo.path.penalties.bruce 000 -> 001"
+        summary: >
+          - Experimental: add, an open container for penalty series under tuning
+          - UnmetLoadPenaltyUsdList: move into Experimental
 
-  flo.rerun.request:
-    latest_version: "001"
+  flo.recommendation:
+    latest_version: "003"
     versioning_strategy: "literal"
     versions:
+      "003":
+        summary: "- PathPenaltiesList: flo.path.penalties.bruce 001 -> 002"
+
+  flo.rerun.request:
+    latest_version: "002"
+    versioning_strategy: "literal"
+    versions:
+      "002":
+        summary: "- Params: flo.params 004 joins the union; a 003 is lifted to 004"
       "001":
         summary: "- Params: a flo.params 002 is lifted to 003, its unmet-load penalty off"
       "000":
@@ -61,9 +67,13 @@ types:
         summary: "TypeName and Version only."
 
   flo.tuning.bruce:
-    latest_version: "002"
+    latest_version: "003"
     versioning_strategy: "literal"
     versions:
+      "003":
+        summary: >
+          - Experimental: add, an open container for knobs under tuning
+          - UnmetLoadPenaltyEnabled, UnmetLoadPenaltyWeight: move into Experimental
       "002":
         summary: >
           - UnmetLoadPenaltyEnabled: add, assigned false
