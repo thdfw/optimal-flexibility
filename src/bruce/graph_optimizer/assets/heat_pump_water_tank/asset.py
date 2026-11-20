@@ -9,6 +9,7 @@ import numpy as np
 from bruce.graph_optimizer.settings import get_logger
 
 from ..base import Asset, TransitionMatrixParams
+from ..utils import kelvin_to_fahrenheit
 
 logger = get_logger("assets.heat_pump_water_tank")
 from .action import HeatPumpWaterTankAction
@@ -61,11 +62,18 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         self._horizon_median_elec_price_kwh = self._median_kwh(prices_kwh)
 
     def _refresh_max_heat_price_kwh(self) -> None:
-        """Most expensive heat pump heat over the horizon ($/kWh thermal)."""
+        """Penalty price of heat ($/kWh thermal).
+
+        COP is evaluated at ``max_tank_temp_f`` as the leaving-water temperature.
+        Operating cost uses bulk temperature plus lift instead.
+        """
         self._max_heat_price_kwh = max(
             0.0,
             max(
-                (p / 1000 / self.params.COP(oat) for p, oat in zip(self.params.elec_price_mwh, self.params.oat_f)),
+                (
+                    p / 1000 / self.params.COP(oat, self.params.max_tank_temp_f)
+                    for p, oat in zip(self.params.elec_price_mwh, self.params.oat_f)
+                ),
                 default=0.0,
             ),
         )
@@ -191,9 +199,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         dt = self.params.timestep_duration_hours[time_step]
         load = self.params.load_kwh[time_step]
         losses = self._losses_kwh(state, time_step)
-        max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode)
+
+        expected_lwt = self.expected_lwt_f(state)
+        max_hp_heat_out = self._max_hp_heat_out_kwh(expected_lwt, time_step, mode)
         min_short_cycle_heat = (
-            self.params.hp_min_kw_elec * dt * self.params.COP(self.params.oat_f[time_step])
+            self.params.hp_min_kw_elec * dt * self.params.COP(self.params.oat_f[time_step], expected_lwt)
             if mode == 0 and self.params.hp_min_kw_elec > 0
             else 0.0
         )
@@ -289,8 +299,19 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             return False
         return True
 
-    def elec_used_kwh(self, state: HeatPumpWaterTankState, action: HeatPumpWaterTankAction, time_step: int) -> float:
-        cop = self.params.COP(self.params.oat_f[time_step])
+    def expected_lwt_f(self, state: HeatPumpWaterTankState) -> float:
+        """Leaving-water temperature (°F) for a step that starts at ``state``: bulk plus lift."""
+        capacity_kwh_per_k = self.params.storage_volume_gallons * 3.785 * 4.187 / 3600
+        bulk_temp_f = kelvin_to_fahrenheit(state.energy / capacity_kwh_per_k)
+        return bulk_temp_f + self.params.hp_constant_lift_f
+
+    def elec_used_kwh(
+        self,
+        state: HeatPumpWaterTankState,
+        action: HeatPumpWaterTankAction,
+        time_step: int,
+    ) -> float:
+        cop = self.params.COP(self.params.oat_f[time_step], self.expected_lwt_f(state))
         return self._hp_heat_out_kwh(state, action, time_step) / cop
 
     def _hp_heat_out_kwh(
@@ -307,9 +328,9 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         dt = self.params.timestep_duration_hours[time_step]
         return self.params.storage_losses_percent / 100 * (state.energy - self.min_state_energy) * dt
 
-    def _max_hp_heat_out_kwh(self, time_step: int, mode: int) -> float:
+    def _max_hp_heat_out_kwh(self, lwt_for_cop: float, time_step: int, mode: int) -> float:
         dt = self.params.timestep_duration_hours[time_step]
-        cop = self.params.COP(self.params.oat_f[time_step])
+        cop = self.params.COP(self.params.oat_f[time_step], lwt_for_cop)
         turn_on_minutes = 0 if mode else self.params.hp_turn_on_minutes
         max_hp_elec_in = (1 - min(turn_on_minutes, dt * 60) / (dt * 60)) * self.params.hp_max_kw_elec * dt
         return max_hp_elec_in * cop
@@ -374,7 +395,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         start = max(0, h - window)
         prices_kwh = [p / 1000 for p in self.params.elec_price_mwh[start:h]]
         p_ref = self._median_kwh(prices_kwh)
-        cops = [self.params.COP(self.params.oat_f[t]) for t in range(start, h)]
+        # The tank is held above the supply temperature, so replacement heat leaves at that temperature plus lift.
+        cops = [
+            self.params.COP(self.params.oat_f[t], self.params.rswt_f[t] + self.params.hp_constant_lift_f)
+            for t in range(start, h)
+        ]
         cop_bar = sum(cops) / len(cops)
         return p_ref, cop_bar
 
@@ -560,7 +585,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         heat_from_hp = self._hp_heat_out_kwh(state, action, time_step)
         if heat_from_hp <= 0.15:
             return 0.0
-        max_hp_heat_out = self._max_hp_heat_out_kwh(time_step, mode=0)
+        max_hp_heat_out = self._max_hp_heat_out_kwh(self.expected_lwt_f(state), time_step, mode=0)
         if max_hp_heat_out <= 1e-9:
             return 0.0
         fraction = min(1.0, heat_from_hp / max_hp_heat_out)

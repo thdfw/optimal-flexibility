@@ -54,12 +54,32 @@ def _hp_heat_out_kwh(
     action: HeatPumpWaterTankAction,
     time_step: int,
 ) -> float:
-    cop = asset.params.COP(asset.params.oat_f[time_step])
-    return asset.elec_used_kwh(state, action, time_step) * cop
+    return asset._hp_heat_out_kwh(state, action, time_step)
+
+
+def _path_lwt_for_cop(
+    path_nodes: list[Node[HeatPumpWaterTankState]],
+    asset: HeatPumpWaterTankAsset,
+) -> list[float]:
+    """Per-step LWT (°F) for COP on the planned path.
+
+    Each step uses the bulk temperature of the node at the start of the step, plus the
+    heat pump's constant lift, matching ``elec_used_kwh``. Hours past the path reuse the
+    last node's leaving-water temperature; an empty path uses max tank temperature.
+    """
+    params = asset.params
+    if not path_nodes:
+        return [params.max_tank_temp_f] * params.horizon
+    out: list[float] = []
+    for t in range(params.horizon):
+        node = path_nodes[min(t, len(path_nodes) - 1)]
+        out.append(asset.expected_lwt_f(node.state))
+    return out
 
 
 def _thermal_and_normalized_prices(
     params: HeatPumpWaterTankParams,
+    lwt_f: list[float] | None = None,
 ) -> tuple[list[float], list[float], list[float], list[float]]:
     """Per-step thermal price series and companion overlays for the power panel.
 
@@ -68,7 +88,11 @@ def _thermal_and_normalized_prices(
     with the distribution leg re-valued from step COP to horizon mean COP. Electricity
     price / mean COP is returned for the elec line.
     """
-    cops = [params.COP(oat) for oat in params.oat_f]
+    if lwt_f is None:
+        lwt_f = [params.max_tank_temp_f] * params.horizon
+    if len(lwt_f) != params.horizon:
+        raise ValueError(f"lwt_f length ({len(lwt_f)}) must equal horizon ({params.horizon})")
+    cops = [params.COP(params.oat_f[t], lwt_f[t]) for t in range(params.horizon)]
     mean_cop = sum(cops) / len(cops)
     thermal = [float(p / cop) for p, cop in zip(params.elec_price_mwh, cops, strict=True)]
     thermal_lmp: list[float] = []
@@ -169,15 +193,18 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
             edge = path_edges[i]
             t = node.time_step
             dt = params.timestep_duration_hours[t]
-            cop = params.COP(params.oat_f[t])
+            next_state = path_nodes[i + 1].state
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
-            sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, next_state, edge.action, t))
             sp_unmet_load_penalty.append(
-                asset.unmet_load_penalty(node.state, path_nodes[i + 1].state, edge.action, t)
+                asset.unmet_load_penalty(node.state, next_state, edge.action, t)
             )
-            sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
-            sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
+            hp_kwh_el = asset.elec_used_kwh(node.state, edge.action, t)
+            sp_stability_penalty.append(asset.stability_penalty(t, hp_kwh_el))
+            sp_short_cycle_penalty.append(
+                asset.short_cycle_penalty(node.state, edge.action, t, node.mode)
+            )
 
         st = node.state
         sp_top_temp.append(st.top_temp)
@@ -203,7 +230,8 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     )]
     prices = [float(v) for v in params.elec_price_mwh]
     thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
-        params
+        params,
+        _path_lwt_for_cop(path_nodes, asset),
     )
     thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
     # Repeat the last step so a post-step line covers the final interval.
@@ -416,15 +444,18 @@ def plot_graph_results(
             edge = path_edges[i]
             t = node.time_step
             dt = params.timestep_duration_hours[t]
-            cop = params.COP(params.oat_f[t])
+            next_state = path_nodes[i + 1].state
             heat_out = _hp_heat_out_kwh(asset, node.state, edge.action, t)
             sp_hp_heat_out_kw.append(heat_out / dt)
-            sp_rswt_penalty.append(asset.rswt_penalty(node.state, path_nodes[i + 1].state, edge.action, t))
+            sp_rswt_penalty.append(asset.rswt_penalty(node.state, next_state, edge.action, t))
             sp_unmet_load_penalty.append(
-                asset.unmet_load_penalty(node.state, path_nodes[i + 1].state, edge.action, t)
+                asset.unmet_load_penalty(node.state, next_state, edge.action, t)
             )
-            sp_stability_penalty.append(asset.stability_penalty(t, heat_out / cop))
-            sp_short_cycle_penalty.append(asset.short_cycle_penalty(node.state, edge.action, t, node.mode))
+            hp_kwh_el = asset.elec_used_kwh(node.state, edge.action, t)
+            sp_stability_penalty.append(asset.stability_penalty(t, hp_kwh_el))
+            sp_short_cycle_penalty.append(
+                asset.short_cycle_penalty(node.state, edge.action, t, node.mode)
+            )
 
         st = node.state
         sp_top_temp.append(st.top_temp)
@@ -450,7 +481,8 @@ def plot_graph_results(
         for t in range(params.horizon)
     ]
     thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
-        params
+        params,
+        _path_lwt_for_cop(path_nodes, asset),
     )
     thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
 
