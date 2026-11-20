@@ -59,21 +59,27 @@ def _hp_heat_out_kwh(
 
 def _path_lwt_for_cop(
     path_nodes: list[Node[HeatPumpWaterTankState]],
+    path_edges: list[Edge[HeatPumpWaterTankState, HeatPumpWaterTankAction]],
     asset: HeatPumpWaterTankAsset,
 ) -> list[float]:
-    """Per-step LWT (°F) for COP on the planned path.
+    """Per-step LWT (°F) for COP on the planned path, matching ``elec_used_kwh``.
 
-    Each step uses the bulk temperature of the node at the start of the step, plus the
-    heat pump's constant lift, matching ``elec_used_kwh``. Hours past the path reuse the
-    last node's leaving-water temperature; an empty path uses max tank temperature.
+    Each step averages the bulk temperature at its start and the bulk temperature its stored
+    heat reaches, then adds half the lift. Hours past the path reuse the last leaving-water
+    temperature; an empty path uses max tank temperature.
     """
     params = asset.params
     if not path_nodes:
         return [params.max_tank_temp_f] * params.horizon
     out: list[float] = []
     for t in range(params.horizon):
-        node = path_nodes[min(t, len(path_nodes) - 1)]
-        out.append(asset.expected_lwt_f(node.state))
+        i = min(t, len(path_nodes) - 1)
+        if i < len(path_edges):
+            out.append(asset.expected_lwt_f(path_nodes[i].state, path_edges[i].action.heat_to_store_kwh))
+        elif out:
+            out.append(out[-1])
+        else:
+            out.append(asset.expected_lwt_f(path_nodes[i].state, 0.0))
     return out
 
 
@@ -231,7 +237,7 @@ def graph_plot_data(graph: HpGraph) -> dict[str, Any]:
     prices = [float(v) for v in params.elec_price_mwh]
     thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
         params,
-        _path_lwt_for_cop(path_nodes, asset),
+        _path_lwt_for_cop(path_nodes, path_edges, asset),
     )
     thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
     # Repeat the last step so a post-step line covers the final interval.
@@ -482,7 +488,7 @@ def plot_graph_results(
     ]
     thermal_prices, thermal_lmps, thermal_overlay, normalized_prices = _thermal_and_normalized_prices(
         params,
-        _path_lwt_for_cop(path_nodes, asset),
+        _path_lwt_for_cop(path_nodes, path_edges, asset),
     )
     thermal_overlay_scaled = _overlay_scaled_to_thermal_range(thermal_prices, thermal_overlay)
 
