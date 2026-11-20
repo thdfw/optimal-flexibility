@@ -202,16 +202,27 @@ def params_from_request(
     )
 
 
+def lift_flo_params(word: object) -> FloParams:
+    """The ``flo.params`` bruce solves. A 002 or 003 request is lifted to
+    004; a 002's unmet-load penalty is off. A 001 request names no price
+    forecast, so it is refused; the message names both versions."""
+    if isinstance(word, FloParams):
+        return word
+    if isinstance(word, FloParams002):
+        return word.upgrade().upgrade()
+    if isinstance(word, FloParams003):
+        return word.upgrade()
+    raise ValueError(
+        f"bruce reads flo.params {FloParams.version_value()} and this is {getattr(word, 'version', None)}"
+    )
+
+
 def flo_to_solve(request: FloParams | FloRerunRequest) -> tuple[FloParams, list[int], list[int]]:
     """The ``flo.params`` bruce solves, and the steps a re-run forces on or
-    off. A ``flo.rerun.request`` whose params are at a version this snapshot
-    does not read raises; the message names both versions."""
+    off. A ``flo.rerun.request`` wraps the journaled params, so its params
+    are lifted as a request's are."""
     if isinstance(request, FloRerunRequest):
-        flo = request.params
-        if not isinstance(flo, FloParams):
-            raise ValueError(
-                f"bruce reads flo.params {FloParams.version_value()} and this is {flo.version}"
-            )
+        flo = lift_flo_params(request.params)
         return flo, list(request.hp_forced_on_steps), list(request.hp_forced_off_steps)
     return request, [], []
 
@@ -349,23 +360,12 @@ def recommend(request: FloParams | FloRerunRequest) -> FloRecommendation:
 
 
 def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
-    """The ``flo.params`` bruce solves. A 002 or 003 request is lifted to
-    004; a 002's unmet-load penalty is off. A 001 request names no price
-    forecast, so it is refused; the message names both versions."""
+    """The ``flo.params`` bruce solves, from the request's bytes."""
     try:
         data = json.loads(request_bytes)
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise ValueError(f"Invalid JSON: {e}") from e
-    word = SemaCodec().from_dict(data, auto_upgrade=False)
-    if isinstance(word, FloParams):
-        return word
-    if isinstance(word, FloParams002):
-        return word.upgrade().upgrade()
-    if isinstance(word, FloParams003):
-        return word.upgrade()
-    raise ValueError(
-        f"bruce reads flo.params {FloParams.version_value()} and this is {getattr(word, 'version', None)}"
-    )
+    return lift_flo_params(SemaCodec().from_dict(data, auto_upgrade=False))
 
 
 def recommend_bytes(request_bytes: bytes) -> bytes:
