@@ -42,6 +42,8 @@ The parameters to tune are \(\omega, \lambda, H, k\).
 
 The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage is credited with supplying load it doesn't have. The RSWT penalty only counts water that is actually drawn, and stops once that water can no longer give heat, so it does not price this undeliverable remainder.
 
+Its two knobs, `UnmetLoadPenaltyEnabled` and `UnmetLoadPenaltyWeight` (\(\omega\)), are sent in the `Experimental` dict of `flo.tuning.bruce` while the penalty is under tuning, and the per-step charge comes back as `UnmetLoadPenaltyUsdList` in the `Experimental` dict of `flo.path.penalties.bruce`.
+
 For each discharging edge whose target energy \(E(s_t) + \Delta E_t\) is below the energy of the coldest state in the graph, we apply the following cost penalty:
 
 $$

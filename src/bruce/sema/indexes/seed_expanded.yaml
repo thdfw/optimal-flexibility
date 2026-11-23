@@ -1,12 +1,13 @@
 metadata:
   generated_from: indexes/public_registry.yaml
-  generated_at: '2026-11-18T10:54:37Z'
+  generated_at: '2026-11-19T14:17:52Z'
   note: Transitive closure of initial_targets
 initial_targets:
-- flo.params:003
-- flo.recommendation:002
+- flo.params:004
+- flo.recommendation:003
 - flo.rerun.request:000
 - flo.rerun.request:001
+- flo.rerun.request:002
 worklist:
   formats:
     git.commit:
@@ -46,17 +47,21 @@ worklist:
         path: definitions/types/flo.params/002.yaml
       '003':
         path: definitions/types/flo.params/003.yaml
+      '004':
+        path: definitions/types/flo.params/004.yaml
     flo.path.penalties.bruce:
-      '001':
-        path: definitions/types/flo.path.penalties.bruce/001.yaml
-    flo.recommendation:
       '002':
-        path: definitions/types/flo.recommendation/002.yaml
+        path: definitions/types/flo.path.penalties.bruce/002.yaml
+    flo.recommendation:
+      '003':
+        path: definitions/types/flo.recommendation/003.yaml
     flo.rerun.request:
       '000':
         path: definitions/types/flo.rerun.request/000.yaml
       '001':
         path: definitions/types/flo.rerun.request/001.yaml
+      '002':
+        path: definitions/types/flo.rerun.request/002.yaml
     flo.tank.store.path:
       '000':
         path: definitions/types/flo.tank.store.path/000.yaml
@@ -68,6 +73,8 @@ worklist:
         path: definitions/types/flo.tuning.bruce/001.yaml
       '002':
         path: definitions/types/flo.tuning.bruce/002.yaml
+      '003':
+        path: definitions/types/flo.tuning.bruce/003.yaml
     price.quantity.unitless:
       '001':
         path: definitions/types/price.quantity.unitless/001.yaml

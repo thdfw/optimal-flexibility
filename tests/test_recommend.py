@@ -68,8 +68,6 @@ def oak_request() -> FloParams:
             rswt_penalty_decay=0.9,
             rswt_penalty_exponent_rate=0.15,
             rswt_penalty_decay_max_hour=12,
-            unmet_load_penalty_enabled=True,
-            unmet_load_penalty_weight=10.0,
             short_cycle_penalty_enabled=True,
             short_cycle_penalty_weight=6.0,
             stability_penalty_enabled=True,
@@ -80,6 +78,7 @@ def oak_request() -> FloParams:
             stability_penalty_horizon_hours=20,
             terminal_cost_enabled=True,
             terminal_cost_end_window_hours=24,
+            experimental={"UnmetLoadPenaltyEnabled": True, "UnmetLoadPenaltyWeight": 10.0},
         ),
     )
 
@@ -198,19 +197,59 @@ def test_a_rerun_request_puts_the_forced_steps_on_the_optimizer_params() -> None
     assert params.hp_forced_off_steps == [2]
 
 
-def test_a_002_request_is_read_as_003_with_the_unmet_load_penalty_off() -> None:
+def test_a_002_request_is_read_as_004_with_the_unmet_load_penalty_off() -> None:
     from pathlib import Path
 
     from bruce.service import flo_params_from_bytes
 
     raw = Path("src/bruce/sema/samples/flo.params.002.json").read_bytes()
     params = flo_params_from_bytes(raw)
-    assert params.version == "003"
+    assert params.version == "004"
     assert params.g_node_alias == "hw1.isone.me.versant.keene.oak"
     assert isinstance(params.tuning, FloTuningBruce)
-    assert params.tuning.version == "002"
-    assert params.tuning.unmet_load_penalty_enabled is False
-    assert params.tuning.unmet_load_penalty_weight == 10.0
+    assert params.tuning.version == "003"
+    assert params.tuning.experimental == {
+        "UnmetLoadPenaltyEnabled": False,
+        "UnmetLoadPenaltyWeight": 10.0,
+    }
+
+
+def test_a_003_request_is_read_as_004_with_its_knobs_in_experimental() -> None:
+    from pathlib import Path
+
+    from bruce.service import flo_params_from_bytes
+
+    raw = Path("src/bruce/sema/samples/flo.params.003.json").read_bytes()
+    params = flo_params_from_bytes(raw)
+    assert params.version == "004"
+    assert isinstance(params.tuning, FloTuningBruce)
+    assert params.tuning.experimental == {
+        "UnmetLoadPenaltyEnabled": True,
+        "UnmetLoadPenaltyWeight": 10.0,
+    }
+
+
+def test_a_knob_missing_from_experimental_is_refused_by_name() -> None:
+    import pytest
+
+    from bruce.service import params_from_request
+
+    request = oak_request()
+    assert isinstance(request.tuning, FloTuningBruce)
+    request.tuning.experimental.pop("UnmetLoadPenaltyWeight")
+    with pytest.raises(ValueError, match="UnmetLoadPenaltyWeight"):
+        params_from_request(request)
+
+
+def test_the_unmet_load_series_is_echoed_in_experimental() -> None:
+    from bruce.service import recommend
+
+    recommendation = recommend(oak_request())
+    assert recommendation.path_penalties_list is not None
+    for word, path in zip(recommendation.path_penalties_list, recommendation.optimal_path_list, strict=True):
+        series = word.experimental["UnmetLoadPenaltyUsdList"]
+        assert len(series) == len(path.hp_avg_w_list)
+        assert all(v >= 0 for v in series)
 
 
 def test_a_001_request_names_the_version_bruce_reads() -> None:
@@ -219,7 +258,7 @@ def test_a_001_request_names_the_version_bruce_reads() -> None:
     from bruce.service import flo_params_from_bytes
 
     raw = Path("src/bruce/sema/samples/flo.params.001.json").read_bytes()
-    with pytest.raises(ValueError, match="bruce reads flo.params 003 and this is 001"):
+    with pytest.raises(ValueError, match="bruce reads flo.params 004 and this is 001"):
         flo_params_from_bytes(raw)
 
 
@@ -238,10 +277,10 @@ def test_a_rerun_of_an_older_params_names_the_version_bruce_reads() -> None:
             "HpForcedOnSteps": [],
             "HpForcedOffSteps": [],
             "TypeName": "flo.rerun.request",
-            "Version": "001",
+            "Version": "002",
         }
     )
-    with pytest.raises(ValueError, match="bruce reads flo.params 003 and this is 001"):
+    with pytest.raises(ValueError, match="bruce reads flo.params 004 and this is 001"):
         flo_to_solve(request)
 
 
