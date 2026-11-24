@@ -11,8 +11,8 @@ class HeatPumpWaterTankParams(Params):
     horizon: int = 48
     
     # Storage
-    num_layers: int = 9
-    storage_volume_gallons: float = 120
+    num_layers: int = 27
+    storage_volume_gallons: float = 360
     storage_losses_percent: float = 0.5
     max_tank_temp_f: float = 160
 
