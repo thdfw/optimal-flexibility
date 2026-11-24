@@ -11,8 +11,8 @@ class HeatPumpWaterTankParams(Params):
     horizon: int = 48
     
     # Storage
-    num_layers: int = 9
-    storage_volume_gallons: float = 120
+    num_layers: int = 27
+    storage_volume_gallons: float = 360
     storage_losses_percent: float = 0.5
     max_tank_temp_f: float = 160
 
@@ -45,7 +45,7 @@ class HeatPumpWaterTankParams(Params):
     rswt_penalty_decay_max_hour: int = 12
 
     # Unmet load penalty
-    unmet_load_penalty_enabled: bool = True
+    unmet_load_penalty_enabled: bool = False
     unmet_load_penalty_weight: float = 10.0
 
     # Short-cycle penalty (from-off fill-to-full below this step's max power)
