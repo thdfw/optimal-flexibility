@@ -179,97 +179,220 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         }
         return list(self._action_by_heat_to_store_kwh.values())
 
-    def _build_available_actions_cache(self) -> None:
-        self._available_actions_cache = []
-        self._fill_to_full_action_by_state = {}
-        for time_step in range(self.params.horizon):
-            by_state_and_mode: dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
-            for state in self.state_space:
-                for mode in (0, 1):
-                    by_state_and_mode[(state.index, mode)] = self._available_actions_for(state, time_step, mode)
-            self._available_actions_cache.append(by_state_and_mode)
+    def _ensure_states_by_energy(self) -> np.ndarray:
+        energies = getattr(self, "_state_energies", None)
+        if energies is not None and len(energies) == len(self.state_space):
+            return energies
+        energies = np.array([state.energy for state in self.state_space], dtype=np.float64)
+        order = np.argsort(energies, kind="mergesort")
+        self._state_energies = energies
+        self._energy_order = order
+        self._sorted_state_energies = energies[order]
+        n_layers = self.params.num_layers
+        layers = np.empty((len(self.state_space), n_layers), dtype=np.float64)
+        for i, state in enumerate(self.state_space):
+            layers[i] = self._temps_by_layer(state)
+        self._layer_temp_matrix = layers
+        return energies
 
-    def _available_actions_for(
+    def _state_indices_within_energy(self, target: float, window: float) -> np.ndarray:
+        """Indices of states whose energy is within ``window`` of ``target``, in state-space order."""
+        self._ensure_states_by_energy()
+        sorted_energy = self._sorted_state_energies
+        lo = int(np.searchsorted(sorted_energy, target - window, side="left"))
+        hi = int(np.searchsorted(sorted_energy, target + window, side="right"))
+        lo = max(0, lo - 1)
+        hi = min(len(sorted_energy), hi + 1)
+        order = self._energy_order[lo:hi]
+        keep = np.abs(self._state_energies[order] - target) <= window
+        return np.sort(order[keep])
+
+    def _losses_for_energies(self, energies: np.ndarray, dt: float) -> np.ndarray:
+        return self.params.storage_losses_percent / 100 * (energies - self.min_state_energy) * dt
+
+    def _expected_lwt_for_energies(self, energies: np.ndarray, heat_to_store: np.ndarray | float) -> np.ndarray:
+        capacity_kwh_per_k = self.params.storage_volume_gallons * 3.785 * 4.187 / 3600
+        end_energy = np.minimum(
+            np.maximum(energies + heat_to_store, self.min_state_energy),
+            self.max_state_energy,
+        )
+        start_f = (energies / capacity_kwh_per_k - 273.15) * (9 / 5) + 32
+        end_f = (end_energy / capacity_kwh_per_k - 273.15) * (9 / 5) + 32
+        return (start_f + end_f) / 2 + self.params.hp_constant_lift_f / 2
+
+    def _cop_at(self, oat: float, lwt: np.ndarray) -> np.ndarray:
+        return self.params.cop_intercept + self.params.cop_lwt_coeff * np.maximum(0, lwt - oat)
+
+    def _thermal_for_energies(
         self,
-        state: HeatPumpWaterTankState,
+        energies: np.ndarray,
+        time_step: int,
+        elec_in_kwh: float,
+        losses: np.ndarray,
+    ) -> np.ndarray:
+        if elec_in_kwh <= 0:
+            return np.zeros(energies.shape, dtype=np.float64)
+        load_losses = self.params.load_kwh[time_step] + losses
+        oat = self.params.oat_f[time_step]
+        cop_at_start = self._cop_at(oat, self._expected_lwt_for_energies(energies, 0.0))
+        capacity_kwh_per_k = self.params.storage_volume_gallons * 3.785 * 4.187 / 3600
+        feedback = elec_in_kwh * self.params.cop_lwt_coeff * 0.5 * (1.8 / capacity_kwh_per_k)
+        if feedback >= 1:
+            heat_to_store = np.zeros(energies.shape, dtype=np.float64)
+        else:
+            heat_to_store = (elec_in_kwh * cop_at_start - load_losses) / (1 - feedback)
+        heat_to_store = np.minimum(
+            np.maximum(heat_to_store, self.min_state_energy - energies),
+            self.max_state_energy - energies,
+        )
+        return elec_in_kwh * self._cop_at(oat, self._expected_lwt_for_energies(energies, heat_to_store))
+
+    def _max_hp_for_energies(
+        self,
+        energies: np.ndarray,
         time_step: int,
         mode: int,
-    ) -> tuple[tuple[HeatPumpWaterTankAction, int], ...]:
-        energy = state.energy
+        losses: np.ndarray,
+    ) -> np.ndarray:
         dt = self.params.timestep_duration_hours[time_step]
-        load = self.params.load_kwh[time_step]
-        losses = self._losses_kwh(state, time_step)
+        turn_on_minutes = 0 if mode else self.params.hp_turn_on_minutes
+        max_hp_elec_in = (1 - min(turn_on_minutes, dt * 60) / (dt * 60)) * self.params.hp_max_kw_elec * dt
+        return self._thermal_for_energies(energies, time_step, max_hp_elec_in, losses)
 
-        max_hp_heat_out = self._max_hp_heat_out_kwh(state, time_step, mode)
-        min_short_cycle_heat = (
-            self._thermal_kwh_for_elec_in(state, time_step, self.params.hp_min_kw_elec * dt)
-            if mode == 0 and self.params.hp_min_kw_elec > 0
-            else 0.0
-        )
+    def _discrete_heat_to_store_index(self, desired: np.ndarray) -> np.ndarray:
+        """Floor discharge below -0.25 kWh; otherwise take the nearest 0.1 kWh grid point."""
+        grid = self._heat_to_store_discretized_array
+        discharge = desired < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
+        floored = np.maximum(np.searchsorted(grid, desired, side="right") - 1, 0)
+        nearest = np.abs(grid - desired[:, None]).argmin(axis=1)
+        return np.where(discharge, floored, nearest)
 
-        heat_to_store_for_full = self.max_state_energy - energy
-        hp_heat_out_for_full = heat_to_store_for_full + load + losses
-        forced_on = time_step in self.params.hp_forced_on_steps
-        forced_off = time_step in self.params.hp_forced_off_steps
+    def _cached_fill_to_full_action(self, state: HeatPumpWaterTankState) -> HeatPumpWaterTankAction | None:
+        cache = self._fill_to_full_action_by_state
+        if state.index in cache:
+            return cache[state.index]
+        desired = self.max_state_energy - state.energy
+        fill_action: HeatPumpWaterTankAction | None = None
+        if desired > 0:
+            idx = int(np.abs(self._heat_to_store_discretized_array - desired).argmin())
+            while idx >= 0:
+                heat = self._heat_to_store_discretized[idx]
+                if heat <= 0:
+                    break
+                candidate = self._action_by_heat_to_store_kwh[heat]
+                successor = self.closest_state(
+                    self.next_state(state, candidate), from_state=state, action=candidate
+                )
+                if successor.energy <= self.max_state_energy:
+                    fill_action = candidate
+                    break
+                idx -= 1
+        cache[state.index] = fill_action
+        return fill_action
 
-        # (heat out, next mode: 1 iff this step runs at full available power through its end)
-        hp_heat_out_levels: list[tuple[float, int]] = [] if forced_on else [(0.0, 0)]
-        fill_to_full = False
-        if forced_off:
-            pass
-        elif hp_heat_out_for_full >= max_hp_heat_out:
-            hp_heat_out_levels.append((max_hp_heat_out, 1))
-        elif (
-            heat_to_store_for_full > 0
-            and hp_heat_out_for_full > 0
-            and hp_heat_out_for_full >= min_short_cycle_heat
-        ):
-            fill_to_full = True
+    def _build_available_actions_cache(self) -> None:
+        """One vectorized pass per distinct hour and mode, instead of one Python call per state.
 
-        actions: list[tuple[HeatPumpWaterTankAction, int]] = []
-        seen: set[HeatPumpWaterTankAction] = set()
-        for hp_heat_out, next_mode in hp_heat_out_levels:
-            heat_to_store_desired = hp_heat_out - load - losses
-            if heat_to_store_desired < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH:
-                idx = int(np.searchsorted(self._heat_to_store_discretized_array, heat_to_store_desired, side="right") - 1)
-                idx = max(0, idx)
-            else:
-                idx = int(np.abs(self._heat_to_store_discretized_array - heat_to_store_desired).argmin())
-            action = self._action_by_heat_to_store_kwh[self._heat_to_store_discretized[idx]]
-            if action not in seen:
-                seen.add(action)
-                actions.append((action, next_mode))
+        Hours that share duration, load, outdoor temperature, and forced on/off reuse the same
+        result. Fill-to-full still walks the tank model, once per state.
+        """
+        self._available_actions_cache = []
+        self._fill_to_full_action_by_state = {}
+        states = self.state_space
+        energies = self._ensure_states_by_energy()
+        actions = self.action_space
+        state_indexes = [state.index for state in states]
+        forced_on = set(self.params.hp_forced_on_steps)
+        forced_off = set(self.params.hp_forced_off_steps)
+        hours: dict[
+            tuple[float, float, float, bool, bool],
+            dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]],
+        ] = {}
+        absent = -1
 
-        if fill_to_full:
-            if state.index not in self._fill_to_full_action_by_state:
-                desired = self.max_state_energy - state.energy
-                fill_action: HeatPumpWaterTankAction | None = None
-                if desired > 0:
-                    idx = int(np.abs(self._heat_to_store_discretized_array - desired).argmin())
-                    while idx >= 0:
-                        heat = self._heat_to_store_discretized[idx]
-                        if heat <= 0:
-                            break
-                        candidate = self._action_by_heat_to_store_kwh[heat]
-                        successor = self.closest_state(
-                            self.next_state(state, candidate), from_state=state, action=candidate
-                        )
-                        if successor.energy <= self.max_state_energy:
-                            fill_action = candidate
-                            break
-                        idx -= 1
-                self._fill_to_full_action_by_state[state.index] = fill_action
-            fill_action = self._fill_to_full_action_by_state[state.index]
-            if fill_action is not None and fill_action not in seen:
-                if (
-                    min_short_cycle_heat > 0
-                    and self._hp_heat_out_kwh(state, fill_action, time_step) < min_short_cycle_heat
-                ):
-                    fill_action = None
-            if fill_action is not None and fill_action not in seen:
-                seen.add(fill_action)
-                actions.append((fill_action, 0))
-        return tuple(actions)
+        for time_step in range(self.params.horizon):
+            dt = self.params.timestep_duration_hours[time_step]
+            load = self.params.load_kwh[time_step]
+            hour_key = (dt, load, self.params.oat_f[time_step], time_step in forced_on, time_step in forced_off)
+            cached_hour = hours.get(hour_key)
+            if cached_hour is not None:
+                self._available_actions_cache.append(cached_hour)
+                continue
+
+            losses = self._losses_for_energies(energies, dt)
+            heat_to_full = self.max_state_energy - energies
+            by_state_and_mode: dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
+            is_forced_off = time_step in forced_off
+            include_off = time_step not in forced_on
+            off_idx = self._discrete_heat_to_store_index(0.0 - load - losses) if include_off else None
+
+            for mode in (0, 1):
+                max_hp = self._max_hp_for_energies(energies, time_step, mode, losses)
+                if mode == 0 and self.params.hp_min_kw_elec > 0:
+                    min_short = self._thermal_for_energies(
+                        energies, time_step, self.params.hp_min_kw_elec * dt, losses
+                    )
+                else:
+                    min_short = 0.0
+                hp_for_full = heat_to_full + load + losses
+                if is_forced_off:
+                    include_on = np.zeros(len(states), dtype=bool)
+                    fill_mask = include_on
+                else:
+                    include_on = hp_for_full >= max_hp
+                    fill_mask = (
+                        ~include_on
+                        & (heat_to_full > 0)
+                        & (hp_for_full > 0)
+                        & (hp_for_full >= min_short)
+                    )
+                on_idx = (
+                    self._discrete_heat_to_store_index(max_hp - load - losses)
+                    if bool(include_on.any())
+                    else None
+                )
+
+                fill_index_by_state: dict[int, int] = {}
+                if bool(fill_mask.any()):
+                    min_short_values = min_short if isinstance(min_short, np.ndarray) else None
+                    for i in np.flatnonzero(fill_mask):
+                        state = states[int(i)]
+                        fill_action = self._cached_fill_to_full_action(state)
+                        if fill_action is None:
+                            continue
+                        if min_short_values is not None and float(min_short_values[i]) > 0:
+                            if self._hp_heat_out_kwh(state, fill_action, time_step) < float(min_short_values[i]):
+                                continue
+                        fill_index_by_state[int(i)] = fill_action.index
+
+                off_codes = off_idx.tolist() if off_idx is not None else None
+                on_codes = on_idx.tolist() if on_idx is not None else None
+                include_on_list = include_on.tolist()
+                intern: dict[tuple[int, int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]] = {}
+                for i, state_index in enumerate(state_indexes):
+                    oi = off_codes[i] if off_codes is not None else absent
+                    ai = on_codes[i] if include_on_list[i] and on_codes is not None else absent
+                    if ai == oi:
+                        ai = absent
+                    fi = fill_index_by_state.get(i, absent)
+                    if fi == oi or fi == ai:
+                        fi = absent
+                    key = (oi, ai, fi)
+                    result = intern.get(key)
+                    if result is None:
+                        chosen: list[tuple[HeatPumpWaterTankAction, int]] = []
+                        if oi >= 0:
+                            chosen.append((actions[oi], 0))
+                        if ai >= 0:
+                            chosen.append((actions[ai], 1))
+                        if fi >= 0:
+                            chosen.append((actions[fi], 0))
+                        result = tuple(chosen)
+                        intern[key] = result
+                    by_state_and_mode[(state_index, mode)] = result
+
+            hours[hour_key] = by_state_and_mode
+            self._available_actions_cache.append(by_state_and_mode)
 
     def get_modes(self) -> list[int]:
         # 0: heat pump was off at the end of the previous step.
@@ -464,19 +587,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         action: HeatPumpWaterTankAction | None = None,
     ) -> HeatPumpWaterTankState:
         energy_window_kwh = 0.5
-        shortlist = [
-            candidate
-            for candidate in self.state_space
-            if abs(candidate.energy - state.energy) <= energy_window_kwh
-        ]
-        while not shortlist:
+        target = state.energy
+        indices = self._state_indices_within_energy(target, energy_window_kwh)
+        while indices.size == 0:
             if energy_window_kwh > 1 and 80 < state.top_temp < 170:
                 logger.warning(f"No state within ±{energy_window_kwh} kWh of predicted state {state}")
-            shortlist = [
-                candidate
-                for candidate in self.state_space
-                if abs(candidate.energy - state.energy) <= energy_window_kwh
-            ]
+            indices = self._state_indices_within_energy(target, energy_window_kwh)
             energy_window_kwh += 0.5
 
         if (
@@ -484,26 +600,26 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             and action is not None
             and action.heat_to_store_kwh < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH
         ):
-            colder = [c for c in shortlist if c.energy < from_state.energy]
-            while not colder and len(shortlist) < len(self.state_space):
+            colder = indices[self._state_energies[indices] < from_state.energy]
+            while colder.size == 0 and indices.size < len(self.state_space):
                 energy_window_kwh += 0.5
-                shortlist = [
-                    candidate
-                    for candidate in self.state_space
-                    if abs(candidate.energy - state.energy) <= energy_window_kwh
-                ]
-                colder = [c for c in shortlist if c.energy < from_state.energy]
-            if colder:
-                shortlist = colder
+                indices = self._state_indices_within_energy(target, energy_window_kwh)
+                colder = indices[self._state_energies[indices] < from_state.energy]
+            if colder.size:
+                indices = colder
 
-        return min(
-            shortlist,
-            key=lambda candidate: (
-                self.state_distance(state, candidate),
-                abs(candidate.energy - state.energy),
-                -candidate.top_temp,
-            ),
-        )
+        return self.state_space[self._closest_state_index(state, indices)]
+
+    def _closest_state_index(self, state: HeatPumpWaterTankState, indices: np.ndarray) -> int:
+        """Same winner as ``min`` over state distance, energy gap, then hotter top, then earlier index."""
+        if indices.size == 1:
+            return int(indices[0])
+        predicted = np.asarray(self._temps_by_layer(state), dtype=np.float64)
+        distance = np.abs(self._layer_temp_matrix[indices] - predicted).sum(axis=1)
+        energy_gap = np.abs(self._state_energies[indices] - state.energy)
+        top_temp = self._layer_temp_matrix[indices, 0]
+        winner = int(np.lexsort((indices, -top_temp, energy_gap, distance))[0])
+        return int(indices[winner])
 
     def successors(
         self,
