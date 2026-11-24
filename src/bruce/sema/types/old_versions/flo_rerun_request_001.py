@@ -2,10 +2,10 @@ from typing import Literal, Self
 from pydantic import model_validator
 from bruce.sema.base import SemaType
 from bruce.sema.property_format import NonNegativeInt
-from bruce.sema.types.flo_rerun_request import FloRerunRequest
 from bruce.sema.types.old_versions.flo_params_001 import FloParams001
 from bruce.sema.types.old_versions.flo_params_002 import FloParams002
 from bruce.sema.types.old_versions.flo_params_003 import FloParams003
+from bruce.sema.types.old_versions.flo_rerun_request_002 import FloRerunRequest002
 
 
 class FloRerunRequest001(SemaType):
@@ -49,7 +49,7 @@ class FloRerunRequest001(SemaType):
             )
         return self
 
-    def upgrade(self) -> FloRerunRequest:
+    def upgrade(self) -> FloRerunRequest002:
         """
         - Params: flo.params 004 joins the union; a 003 is lifted to 004
         """
@@ -58,4 +58,4 @@ class FloRerunRequest001(SemaType):
         if getattr(params, "version", None) == "003":
             data["params"] = params.upgrade().model_dump()
         data["version"] = "002"
-        return FloRerunRequest.model_validate(data)
+        return FloRerunRequest002.model_validate(data)

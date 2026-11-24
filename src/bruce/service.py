@@ -47,6 +47,7 @@ from bruce.sema.types import (
 )
 from bruce.sema.types.old_versions.flo_params_002 import FloParams002
 from bruce.sema.types.old_versions.flo_params_003 import FloParams003
+from bruce.sema.types.old_versions.flo_params_004 import FloParams004
 
 FLO_NAME = "bruce"
 FLO_REPO = "github.com/thdfw/optimal-flexibility"
@@ -154,10 +155,7 @@ def params_from_request(
         hp_turn_on_minutes=request.hp_turn_on_minutes,
         hp_constant_lift_f=tuning.hp_constant_lift_f,
         cop_intercept=request.cop_intercept,
-        cop_oat_coeff=request.cop_oat_coeff,
-        cop_lwt_coeff=request.cop_lwt_coeff,
-        cop_min=request.cop_min,
-        cop_min_oat_f=request.cop_min_oat_f,
+        cop_lwt_minus_oat_coeff=request.cop_lwt_minus_oat_coeff,
         load_bucket_upper_kwh=list(tuning.load_bucket_upper_kwh_list),
         rwt_intercept_by_bucket=list(tuning.rwt_intercept_by_bucket_list),
         rwt_slope_by_bucket=list(tuning.rwt_slope_by_bucket_list),
@@ -203,14 +201,17 @@ def params_from_request(
 
 
 def lift_flo_params(word: object) -> FloParams:
-    """The ``flo.params`` bruce solves. A 002 or 003 request is lifted to
-    004; a 002's unmet-load penalty is off. A 001 request names no price
-    forecast, so it is refused; the message names both versions."""
+    """The ``flo.params`` bruce solves. A 002, 003 or 004 request is lifted
+    to 005; a 002's unmet-load penalty is off, and a 004's CopLwtCoeff is the
+    lift coefficient. A 001 request names no price forecast, so it is
+    refused; the message names both versions."""
     if isinstance(word, FloParams):
         return word
     if isinstance(word, FloParams002):
-        return word.upgrade().upgrade()
+        return word.upgrade().upgrade().upgrade()
     if isinstance(word, FloParams003):
+        return word.upgrade().upgrade()
+    if isinstance(word, FloParams004):
         return word.upgrade()
     raise ValueError(
         f"bruce reads flo.params {FloParams.version_value()} and this is {getattr(word, 'version', None)}"
@@ -371,6 +372,6 @@ def flo_params_from_bytes(request_bytes: bytes) -> FloParams:
 def recommend_bytes(request_bytes: bytes) -> bytes:
     """The boundary as bytes: ``flo.params`` JSON in, ``flo.recommendation``
     JSON out. A caller holds its own twin of each word and nothing of
-    bruce's; this is the one call an LTN or a service makes. A 002 or 003
-    request is lifted to 004 before it is solved."""
+    bruce's; this is the one call an LTN or a service makes. A 002, 003 or 004
+    request is lifted to 005 before it is solved."""
     return recommend(flo_params_from_bytes(request_bytes)).to_bytes()
