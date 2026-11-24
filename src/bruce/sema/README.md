@@ -1,25 +1,14 @@
 # Sema vocabulary snapshot (GENERATED)
 
-## ⚠ STAGING SNAPSHOT — PLEASE ONLY USE IN DEV
-
-This snapshot contains STAGING vocabulary: mutable words that run on dev
-brokers only. It MUST NOT be used against hybrid or production brokers.
-
-Staging words in this snapshot:
-
-- type flo.params:004
-- type flo.path.penalties.bruce:002
-- type flo.recommendation:003
-- type flo.rerun.request:002
-- type flo.tuning.bruce:003
-
-When these words promote to published, rebuild without `--allow-staged` to
-get a publication-grade snapshot (and this section disappears).
-
 This directory is a **vendored Sema snapshot**: a self-contained, generated
 subset of the Sema vocabulary. **Never hand-edit it.** To change it, edit the
 seed (`../sema_seed_request.yaml`) or the definitions in the sema repo, then
-re-run the repo's `scripts/regen_sema_snapshot.sh`.
+re-run `uv run sema snapshot regen <seed>` in the sema repo. `check_staging.py`
+here is the consumer's CI check, run as `python -P check_staging.py <seed>`
+(`-P` keeps this directory's `types/` package from shadowing the standard
+library): it fails when this snapshot holds a staging word the seed does not
+allow, or when the seed changed since the build. With `--deploy-branch <name>`
+it also fails on that branch whenever this snapshot holds any staging word.
 
 ## What Sema is
 
