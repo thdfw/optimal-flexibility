@@ -22,10 +22,7 @@ class HeatPumpWaterTankParams(Params):
     hp_turn_on_minutes: int = 12
     hp_constant_lift_f: float = 20
     cop_intercept: float = 2.731
-    cop_oat_coeff: float = 0.015 # TODO in final params: remove
-    cop_lwt_coeff: float = -0.007403 # TODO in final params: rename to cop_lwt_minus_oat_coeff
-    cop_min: float = 1.5 # TODO in final params: remove
-    cop_min_oat_f: float = 0 # TODO in final params: remove
+    cop_lwt_minus_oat_coeff: float = -0.007403
 
     # Distribution system: RWT vs SWT per load bucket ([0, u0), [u0, u1), …, [last, inf) kWh)
     load_bucket_upper_kwh: list[float] = []
@@ -149,7 +146,7 @@ class HeatPumpWaterTankParams(Params):
         return max(self.rwt_min, min(predicted_rwt_f, swt_f))
 
     def COP(self, oat: float, lwt: float) -> float:
-        return self.cop_intercept + self.cop_lwt_coeff * max(0, lwt - oat)
+        return self.cop_intercept + self.cop_lwt_minus_oat_coeff * max(0, lwt - oat)
 
     def validate_bid_params_update(self, updated: Params) -> None:
         if not isinstance(updated, HeatPumpWaterTankParams):

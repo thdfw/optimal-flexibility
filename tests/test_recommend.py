@@ -45,11 +45,8 @@ def oak_request() -> FloParams:
         hp_currently_on=True,
         hp_max_kw_el=9.66,
         hp_turn_on_minutes=12,
-        cop_intercept=1.5,
-        cop_oat_coeff=0.015,
-        cop_lwt_coeff=0.0,
-        cop_min=1.5,
-        cop_min_oat_f=0.0,
+        cop_intercept=2.731,
+        cop_lwt_minus_oat_coeff=-0.007403,
         price_max_usd_mwh=2000.0,
         price_min_usd_mwh=-100.0,
         tuning=FloTuningBruce(
@@ -197,14 +194,14 @@ def test_a_rerun_request_puts_the_forced_steps_on_the_optimizer_params() -> None
     assert params.hp_forced_off_steps == [2]
 
 
-def test_a_002_request_is_read_as_004_with_the_unmet_load_penalty_off() -> None:
+def test_a_002_request_is_read_as_005_with_the_unmet_load_penalty_off() -> None:
     from pathlib import Path
 
     from bruce.service import flo_params_from_bytes
 
     raw = Path("src/bruce/sema/samples/flo.params.002.json").read_bytes()
     params = flo_params_from_bytes(raw)
-    assert params.version == "004"
+    assert params.version == "005"
     assert params.g_node_alias == "hw1.isone.me.versant.keene.oak"
     assert isinstance(params.tuning, FloTuningBruce)
     assert params.tuning.version == "003"
@@ -214,14 +211,14 @@ def test_a_002_request_is_read_as_004_with_the_unmet_load_penalty_off() -> None:
     }
 
 
-def test_a_003_request_is_read_as_004_with_its_knobs_in_experimental() -> None:
+def test_a_003_request_is_read_as_005_with_its_knobs_in_experimental() -> None:
     from pathlib import Path
 
     from bruce.service import flo_params_from_bytes
 
     raw = Path("src/bruce/sema/samples/flo.params.003.json").read_bytes()
     params = flo_params_from_bytes(raw)
-    assert params.version == "004"
+    assert params.version == "005"
     assert isinstance(params.tuning, FloTuningBruce)
     assert params.tuning.experimental == {
         "UnmetLoadPenaltyEnabled": True,
@@ -258,7 +255,7 @@ def test_a_001_request_names_the_version_bruce_reads() -> None:
     from bruce.service import flo_params_from_bytes
 
     raw = Path("src/bruce/sema/samples/flo.params.001.json").read_bytes()
-    with pytest.raises(ValueError, match="bruce reads flo.params 004 and this is 001"):
+    with pytest.raises(ValueError, match="bruce reads flo.params 005 and this is 001"):
         flo_params_from_bytes(raw)
 
 
@@ -277,10 +274,10 @@ def test_a_rerun_of_an_older_params_names_the_version_bruce_reads() -> None:
             "HpForcedOnSteps": [],
             "HpForcedOffSteps": [],
             "TypeName": "flo.rerun.request",
-            "Version": "002",
+            "Version": "003",
         }
     )
-    with pytest.raises(ValueError, match="bruce reads flo.params 004 and this is 001"):
+    with pytest.raises(ValueError, match="bruce reads flo.params 005 and this is 001"):
         flo_to_solve(request)
 
 

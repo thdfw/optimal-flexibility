@@ -19,11 +19,12 @@
 package_name: bruce
 vendor_dir: sema
 
-# No `staging` block: bruce is deployed from main and its snapshot holds
-# published words only; a staging word the closure reaches fails the build.
-# The snapshot's check_staging.py (run by ci.sh) fails on any staging word
-# the snapshot holds. A dev-only build of a staging version adds
-# `staging: {allow: [word]}` on its branch, where the PR diff shows it.
+# flo.params 005 and flo.rerun.request 003 are staging, so this branch
+# allows the two words; any other staging word the closure reaches fails
+# the build. The allow block goes when both are promoted, and the branch
+# then merges to main.
+staging:
+  allow: [flo.params, flo.rerun.request]
 
 local_names:
   strip_prefixes: [gw1, gw]
@@ -31,9 +32,9 @@ local_names:
 initial_targets:
   types:
     flo.params:
-      versions: ["004"]
+      versions: ["005"]
     flo.recommendation:
       versions: ["003"]
     # Body of POST …/flo.rerun.
     flo.rerun.request:
-      versions: ["000", "001", "002"]
+      versions: ["000", "001", "002", "003"]

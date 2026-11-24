@@ -6,16 +6,17 @@ from bruce.sema.types.flo_params import FloParams
 from bruce.sema.types.old_versions.flo_params_001 import FloParams001
 from bruce.sema.types.old_versions.flo_params_002 import FloParams002
 from bruce.sema.types.old_versions.flo_params_003 import FloParams003
+from bruce.sema.types.old_versions.flo_params_004 import FloParams004
 
 
 class FloRerunRequest(SemaType):
-    """Sema: https://schemas.electricity.works/types/flo.rerun.request/002"""
+    """Sema: https://schemas.electricity.works/types/flo.rerun.request/003"""
 
-    params: FloParams001 | FloParams002 | FloParams003 | FloParams
+    params: FloParams001 | FloParams002 | FloParams003 | FloParams004 | FloParams
     hp_forced_on_steps: list[NonNegativeInt]
     hp_forced_off_steps: list[NonNegativeInt]
     type_name: Literal["flo.rerun.request"] = "flo.rerun.request"
-    version: Literal["002"] = "002"
+    version: Literal["003"] = "003"
 
     @model_validator(mode="after")
     def check_axiom_1(self) -> Self:

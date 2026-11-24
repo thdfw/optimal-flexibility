@@ -345,7 +345,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         cop_at_start = self.params.COP(self.params.oat_f[time_step], self.expected_lwt_f(state, 0.0))
         capacity_kwh_per_k = self.params.storage_volume_gallons * 3.785 * 4.187 / 3600
         # A stored kWh raises the average bulk by half of 1.8°F per kWh/K, and COP moves with that.
-        feedback = elec_in_kwh * self.params.cop_lwt_coeff * 0.5 * (1.8 / capacity_kwh_per_k)
+        feedback = elec_in_kwh * self.params.cop_lwt_minus_oat_coeff * 0.5 * (1.8 / capacity_kwh_per_k)
         if feedback >= 1:
             heat_to_store = 0.0
         else:
