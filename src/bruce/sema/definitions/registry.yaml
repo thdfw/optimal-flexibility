@@ -1,6 +1,6 @@
 metadata:
   registry_version: "1.0"
-  last_updated: "2026-11-24T11:20:00Z"
+  last_updated: "2026-11-24T18:40:00Z"
   maintainer: "gridworks-energy"
 
 formats:
@@ -125,7 +125,7 @@ types:
       "005":
         schema_url: "https://schemas.electricity.works/types/flo.params/005"
         created: "2026-11-23T20:50:00Z"
-        status: "staging"
+        status: "published"
         summary: "- COP model is lift-based: CopLwtCoeff -> CopLwtMinusOatCoeff; CopOatCoeff, CopMin, CopMinOatF dropped"
         direct_dependencies:
           structural:
@@ -253,7 +253,7 @@ types:
       "003":
         schema_url: "https://schemas.electricity.works/types/flo.rerun.request/003"
         created: "2026-11-23T21:45:00Z"
-        status: "staging"
+        status: "published"
         summary: "- Params: flo.params 005 joins the union; a 004 is lifted to 005"
         direct_dependencies:
           structural:

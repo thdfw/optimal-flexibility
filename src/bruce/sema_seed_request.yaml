@@ -19,13 +19,6 @@
 package_name: bruce
 vendor_dir: sema
 
-# flo.params 005 and flo.rerun.request 003 are staging, so this branch
-# allows the two words; any other staging word the closure reaches fails
-# the build. The allow block goes when both are promoted, and the branch
-# then merges to main.
-staging:
-  allow: [flo.params, flo.rerun.request]
-
 local_names:
   strip_prefixes: [gw1, gw]
 

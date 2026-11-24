@@ -1,7 +1,0 @@
-staging: true
-staging_words:
-- type flo.params:005
-- type flo.rerun.request:003
-staging_allow:
-- flo.params
-- flo.rerun.request

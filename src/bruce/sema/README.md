@@ -1,19 +1,5 @@
 # Sema vocabulary snapshot (GENERATED)
 
-## ⚠ STAGING SNAPSHOT — PLEASE ONLY USE IN DEV
-
-This snapshot contains STAGING vocabulary: mutable words that run on dev
-brokers only. It MUST NOT be used against hybrid or production brokers.
-
-Staging words in this snapshot:
-
-- type flo.params:005
-- type flo.rerun.request:003
-
-The seed's `staging.allow` list names the words whose staging versions this
-snapshot may hold. When a word promotes to published, drop it from the list
-and regenerate; the section disappears when the list is empty.
-
 This directory is a **vendored Sema snapshot**: a self-contained, generated
 subset of the Sema vocabulary. **Never hand-edit it.** To change it, edit the
 seed (`../sema_seed_request.yaml`) or the definitions in the sema repo, then
