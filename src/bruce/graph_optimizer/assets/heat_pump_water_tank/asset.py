@@ -611,10 +611,12 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return self.state_space[self._closest_state_index(state, indices)]
 
     def _closest_state_index(self, state: HeatPumpWaterTankState, indices: np.ndarray) -> int:
-        """Same winner as ``min`` over state distance, energy gap, then hotter top, then earlier index."""
+        """Same winner as ``min`` over state distance, energy gap, then hotter top, then earlier index.
+        A predicted state whose second thermocline is below the bottom layer is compared on the
+        layers the tank has, as ``state_distance`` compares it."""
         if indices.size == 1:
             return int(indices[0])
-        predicted = np.asarray(self._temps_by_layer(state), dtype=np.float64)
+        predicted = np.asarray(self._temps_by_layer(state)[: self.params.num_layers], dtype=np.float64)
         distance = np.abs(self._layer_temp_matrix[indices] - predicted).sum(axis=1)
         energy_gap = np.abs(self._state_energies[indices] - state.energy)
         top_temp = self._layer_temp_matrix[indices, 0]
