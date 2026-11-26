@@ -628,10 +628,23 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         transition_variant: int = 0,
     ) -> list[tuple[HeatPumpWaterTankState, float]]:
         """The closest state and a state on the other side of the predicted energy, weighted so
-        that their average energy is the predicted energy (see docs/two-node-transitions.md)."""
+        that their average energy is the predicted energy (see docs/two-node-transitions.md).
+
+        A discharge the tank cannot actually give — the water drawn from the top is at or below
+        its return temperature before the requested heat is out — stays at the energy the tank
+        model reaches. Matching the requested energy instead would land on a colder grid state
+        that sheds the heat by growing the cold bottom and leaving the top untouched.
+        """
         predicted = self.next_state(state, action, transition_variant=transition_variant)
         closest = self.closest_state(predicted, from_state=state, action=action)
-        target = state.energy + action.heat_to_store_kwh
+        requested_end = state.energy + action.heat_to_store_kwh
+        target = requested_end
+        if action.heat_to_store_kwh < -NET_HEAT_TO_STORE_MIN_DISCHARGE_KWH:
+            deliverable = self.deliverable_discharge_kwh(
+                state, -action.heat_to_store_kwh, transition_variant
+            )
+            if -action.heat_to_store_kwh - deliverable > 1e-6:
+                target = predicted.energy
         if abs(closest.energy - target) < 1e-6:
             return [(closest, 1.0)]
         other = self._other_side_state(predicted, target, closest.energy < target, state, action)
@@ -843,16 +856,79 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         action: HeatPumpWaterTankAction,
         time_step: int,
     ) -> float:
-        """Load the storage is credited with supplying but cannot, because the discharge would take it
-        below the coldest state in the state space. Losses come out of this first, since a storage at
-        the floor has no losses to give."""
+        """Load the storage is credited with supplying but cannot.
+
+        Two gaps count. The discharge would end below the coldest state in the state space, and the
+        transition lands on the floor anyway. Or the water drawn from the top is at or below its
+        return temperature before the requested heat is out, so that heat never leaves the tank.
+        Losses come out of either gap first: a storage with nothing left to give has no losses to
+        give either, and the load is what is priced.
+
+        The undeliverable-heat term depends only on the starting tank and the action, so both heads
+        of a two-head edge return it in full. ``create_edges`` weights the two head costs, and that
+        weight then leaves the charge intact on the edge. When the water can give the heat but the
+        requested end lies below the coldest state, the floor gap still depends on the head.
+        """
         if not self.params.unmet_load_penalty_enabled or action.heat_to_store_kwh >= 0:
             return 0.0
-        target = state.energy + action.heat_to_store_kwh
-        if target >= self.lowest_state_energy:
-            return 0.0
-        unmet_load_kwh = max(0.0, next_state.energy - target - self._losses_kwh(state, time_step))
+        losses = self._losses_kwh(state, time_step)
+        requested = -action.heat_to_store_kwh
+        deliverable = self.deliverable_discharge_kwh(
+            state, requested, self.transition_variant(state, action, time_step)
+        )
+        undeliverable = max(0.0, requested - losses - deliverable)
+        if undeliverable > 0.0:
+            unmet_load_kwh = undeliverable
+        else:
+            target = state.energy + action.heat_to_store_kwh
+            if target >= self.lowest_state_energy:
+                return 0.0
+            unmet_load_kwh = max(0.0, next_state.energy - target - losses)
         return self.params.unmet_load_penalty_weight * self._max_heat_price_kwh * unmet_load_kwh
+
+    def deliverable_discharge_kwh(
+        self,
+        state: HeatPumpWaterTankState,
+        energy_kwh: float,
+        load_bucket: int = 0,
+    ) -> float:
+        """Heat the storage can give toward ``energy_kwh`` by drawing from the top.
+
+        Each layer is returned to the bottom at its return-water temperature and can be drawn
+        again. The walk stops when the next water is at or below that temperature and can give
+        no more heat; the rest of ``energy_kwh`` is not deliverable.
+        """
+        return sum(supplied for _, supplied in self._drawn_layer_heat(state, energy_kwh, load_bucket))
+
+    def _layer_kwh_per_f(self) -> float:
+        return self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
+
+    def _drawn_layer_heat(
+        self,
+        state: HeatPumpWaterTankState,
+        energy_kwh: float,
+        load_bucket: int,
+    ) -> list[tuple[float, float]]:
+        """``(temperature °F, kWh supplied)`` for water drawn from the top toward ``energy_kwh``."""
+        layer_kwh_per_f = self._layer_kwh_per_f()
+        layers = self._temps_by_layer(state)
+        drawn: list[tuple[float, float]] = []
+        remaining_kwh = energy_kwh
+        while remaining_kwh > 1e-9:
+            returned: list[float] = []
+            for temp in layers:
+                rwt = self.params.rwt(temp, load_bucket)
+                layer_kwh = layer_kwh_per_f * (temp - rwt)
+                if layer_kwh <= 0:
+                    return drawn
+                supplied_kwh = min(remaining_kwh, layer_kwh)
+                drawn.append((temp, supplied_kwh))
+                remaining_kwh -= supplied_kwh
+                if remaining_kwh <= 1e-9:
+                    return drawn
+                returned.append(rwt)
+            layers = returned
+        return drawn
 
     def layers_drawn(
         self,
@@ -873,25 +949,10 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         to give any heat, the rest of energy_kwh is left uncounted: that undeliverable heat is priced
         by the unmet-load penalty, not as water drawn below RSWT.
         """
-        layer_kwh_per_f = self.params.storage_volume_gallons * 3.785 / self.params.num_layers * 4.187 / 3600 * 5 / 9
-        rswt_layer_kwh = layer_kwh_per_f * (rswt - self.params.rwt(rswt, load_bucket))
+        rswt_layer_kwh = self._layer_kwh_per_f() * (rswt - self.params.rwt(rswt, load_bucket))
         if rswt_layer_kwh <= 0:
             return []
-        layers = self._temps_by_layer(state)
-        drawn: list[tuple[float, float]] = []
-        remaining_kwh = energy_kwh
-        while remaining_kwh > 1e-9:
-            returned: list[float] = []
-            for temp in layers:
-                rwt = self.params.rwt(temp, load_bucket)
-                layer_kwh = layer_kwh_per_f * (temp - rwt)
-                if layer_kwh <= 0:
-                    return drawn
-                supplied_kwh = min(remaining_kwh, layer_kwh)
-                drawn.append((temp, supplied_kwh / rswt_layer_kwh))
-                remaining_kwh -= supplied_kwh
-                if remaining_kwh <= 1e-9:
-                    return drawn
-                returned.append(rwt)
-            layers = returned
-        return drawn
+        return [
+            (temp, supplied_kwh / rswt_layer_kwh)
+            for temp, supplied_kwh in self._drawn_layer_heat(state, energy_kwh, load_bucket)
+        ]

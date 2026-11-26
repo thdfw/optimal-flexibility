@@ -40,14 +40,14 @@ The parameters to tune are \(\omega, \lambda, H, k\).
 
 # Unmet load penalty
 
-The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage is credited with supplying load it doesn't have. The RSWT penalty only counts water that is actually drawn, and stops once that water can no longer give heat, so it does not price this undeliverable remainder.
+The coldest states in the graph are not empty: there is no state below them, so a discharge from (or near) the floor cannot remove all the energy it should. The transition lands on the floor anyway, and the storage would be credited with supplying load it doesn't have. Water at or below its return temperature gives no heat either. A discharge that asks for more than that water can give stays at the energy the tank model reaches, rather than on a colder grid state that sheds the heat by growing the cold bottom and leaving the top layer in place. Either shortfall is unmet load. The RSWT penalty only counts water that is actually drawn, and stops once that water can no longer give heat, so it does not price this undeliverable remainder.
 
 Its two knobs, `UnmetLoadPenaltyEnabled` and `UnmetLoadPenaltyWeight` (\(\omega\)), are sent in the `Experimental` dict of `flo.tuning.bruce` while the penalty is under tuning, and the per-step charge comes back as `UnmetLoadPenaltyUsdList` in the `Experimental` dict of `flo.path.penalties.bruce`.
 
-For each discharging edge whose target energy \(E(s_t) + \Delta E_t\) is below the energy of the coldest state in the graph, we apply the following cost penalty:
+For each discharging edge, let \(D_t\) be the heat the storage can give by drawing from the top until the next water is at or below its return temperature. When that falls short of the request, the penalty is that shortfall, and both heads of the edge carry it in full so the weighted edge cost includes all of it. Otherwise, when the requested end energy is below the coldest state in the graph, the penalty is the gap that lands on the floor:
 
 $$
-\text{unmet-load-penalty}_t = \omega \cdot \max_{\tau} \frac{p_\tau}{\text{COP}_\tau} \cdot \max\left(0,\; E(s_{t+1}) - \left(E(s_t) + \Delta E_t\right) - L_t\right)
+\text{unmet-load-penalty}_t = \omega \cdot \max_{\tau} \frac{p_\tau}{\text{COP}_\tau} \cdot \begin{cases} \max\left(0,\; -\Delta E_t - L_t - D_t\right) & \text{if } -\Delta E_t > D_t + L_t \\ \left[E(s_{t+1}) - \left(E(s_t) + \Delta E_t\right) - L_t\right]_{\text{below floor}} & \text{otherwise} \end{cases}
 $$
 
 where:
@@ -56,7 +56,9 @@ where:
 - \(\max_\tau p_\tau / \text{COP}_\tau\) is the most expensive heat pump heat over the planning horizon (in $/kWh thermal)
 - \(E(s)\) is the stored energy in state \(s\) (in kWh)
 - \(\Delta E_t\) is the heat to the storage on the edge (negative when discharging, in kWh)
+- \(D_t\) is the heat the storage can give toward \(-\Delta E_t\) by drawing from the top, stopping when the next water is at or below its return temperature (in kWh)
 - \(L_t\) is the storage losses during the time step (in kWh): losses are given away for free, since a storage at the floor has no losses left to give, but the load is not
+- the floor term applies only when the water can give the requested heat, and is zero unless \(E(s_t) + \Delta E_t\) is below the coldest state in the graph
 
 With \(\omega > 1\), every kWh of load the storage cannot supply costs more than producing that heat with the heat pump at the most expensive hour, so the FLO always prefers to charge ahead of time. The penalty is finite rather than infinite so that, when unmet load is unavoidable (e.g. starting at the floor during hours where the heat pump is forced off), the FLO still minimizes the unmet kWh and then the cost.
 
