@@ -381,6 +381,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             cooled_top_energy = HeatPumpWaterTankState.build(t_cooled, m, b, th1, th2, self.params).energy
             t_layers = th1
+            current_state = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params)
+            current_energy = current_state.energy
+
+            # We have already reached the target
+            if current_energy <= next_state_energy:
+                return current_state
 
             # We will discharge past the top layers
             if cooled_top_energy > next_state_energy:
@@ -388,7 +394,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy - current_energy) / t_layers
                 layers_to_cool = (next_state_energy - current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -445,6 +450,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,m,b,th1,th2,self.params).energy
             t_layers = th1
+            current_state = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params)
+            current_energy = current_state.energy
+
+            # We have already reached the target
+            if current_energy <= next_state_energy:
+                return current_state
 
             # We will discharge past the top layers
             if cooled_top_energy > next_state_energy:
@@ -458,7 +469,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState.build(t,m,b,th1,th2,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
                 layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -519,6 +529,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             cooled_top_energy = HeatPumpWaterTankState.build(t_cooled, m, m, th1, th1, self.params).energy
             t_layers = th1
+            current_state = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params)
+            current_energy = current_state.energy
+
+            # We have already reached the target
+            if current_energy <= next_state_energy:
+                return current_state
 
             # We will discharge past the top layers
             if cooled_top_energy > next_state_energy:
@@ -526,7 +542,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy - current_energy) / t_layers
                 layers_to_cool = (next_state_energy - current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -552,6 +567,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
             cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,m,m,th1,th1,self.params).energy
             t_layers = th1
+            current_state = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params)
+            current_energy = current_state.energy
+
+            # We have already reached the target
+            if current_energy <= next_state_energy:
+                return current_state
 
             # We will discharge past the top layers
             if cooled_top_energy > next_state_energy:
@@ -561,7 +582,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
                 
             # We will not discharge all top layers
             else:
-                current_energy = HeatPumpWaterTankState.build(t,m,m,th1,th1,self.params).energy
                 energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
                 layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
                 layers_to_cool = min(layers_to_cool, t_layers-1)
@@ -589,6 +609,12 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
 
         cooled_top_energy = HeatPumpWaterTankState.build(t_cooled,t_cooled,t_cooled,self.params.num_layers,self.params.num_layers, self.params).energy
         t_layers = self.params.num_layers
+        current_state = HeatPumpWaterTankState.build(t,t,t,self.params.num_layers,self.params.num_layers, self.params)
+        current_energy = current_state.energy
+
+        # We have already reached the target
+        if current_energy <= next_state_energy:
+            return current_state
 
         # We will discharge past the top layers
         if cooled_top_energy > next_state_energy:
@@ -596,7 +622,6 @@ class HeatPumpWaterTankModel(Model[HeatPumpWaterTankState, HeatPumpWaterTankActi
             
         # We will not discharge all top layers
         else:
-            current_energy = HeatPumpWaterTankState.build(t,t,t,self.params.num_layers,self.params.num_layers, self.params).energy
             energy_cooling_one_layer = (cooled_top_energy-current_energy) / t_layers
             layers_to_cool = (next_state_energy-current_energy) / energy_cooling_one_layer
             layers_to_cool = min(layers_to_cool, t_layers-1)
