@@ -226,6 +226,19 @@ def test_a_003_request_is_read_as_005_with_its_knobs_in_experimental() -> None:
     }
 
 
+def test_mode_tracking_defaults_on_when_its_experimental_key_is_absent() -> None:
+    params = params_from_request(oak_request())
+    assert params.heat_pump_mode_tracking_enabled is True
+
+
+def test_mode_tracking_is_read_from_experimental() -> None:
+    request = oak_request()
+    assert isinstance(request.tuning, FloTuningBruce)
+    request.tuning.experimental["HeatPumpModeTrackingEnabled"] = False
+    params = params_from_request(request)
+    assert params.heat_pump_mode_tracking_enabled is False
+
+
 def test_a_knob_missing_from_experimental_is_refused_by_name() -> None:
     import pytest
 

@@ -247,6 +247,25 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         )
         return elec_in_kwh * self._cop_at(oat, self._expected_lwt_for_energies(energies, heat_to_store))
 
+    def _turn_on_minutes(self, time_step: int, mode: int) -> float:
+        """Minutes of the step spent coming online before full power.
+
+        Mode 1 is already on, so it pays nothing. Mode 0 pays ``hp_turn_on_minutes``.
+        With tracking off, hour 0 still follows ``hp_currently_on``. Every later hour
+        pays half of ``hp_turn_on_minutes``, because the previous step's mode is unknown.
+        """
+        full = float(self.params.hp_turn_on_minutes)
+        if not self.params.heat_pump_mode_tracking_enabled:
+            if time_step == 0:
+                return 0.0 if self.params.hp_currently_on else full
+            return full / 2
+        return 0.0 if mode else full
+
+    def _max_hp_elec_in_kwh(self, time_step: int, turn_on_minutes: float) -> float:
+        dt = self.params.timestep_duration_hours[time_step]
+        running = 1 - min(turn_on_minutes, dt * 60) / (dt * 60)
+        return running * self.params.hp_max_kw_elec * dt
+
     def _max_hp_for_energies(
         self,
         energies: np.ndarray,
@@ -254,9 +273,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         mode: int,
         losses: np.ndarray,
     ) -> np.ndarray:
-        dt = self.params.timestep_duration_hours[time_step]
-        turn_on_minutes = 0 if mode else self.params.hp_turn_on_minutes
-        max_hp_elec_in = (1 - min(turn_on_minutes, dt * 60) / (dt * 60)) * self.params.hp_max_kw_elec * dt
+        max_hp_elec_in = self._max_hp_elec_in_kwh(time_step, self._turn_on_minutes(time_step, mode))
         return self._thermal_for_energies(energies, time_step, max_hp_elec_in, losses)
 
     def _discrete_heat_to_store_index(self, desired: np.ndarray) -> np.ndarray:
@@ -305,7 +322,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         forced_on = set(self.params.hp_forced_on_steps)
         forced_off = set(self.params.hp_forced_off_steps)
         hours: dict[
-            tuple[float, float, float, bool, bool],
+            tuple[float, float, float, bool, bool, float | None],
             dict[tuple[int, int], tuple[tuple[HeatPumpWaterTankAction, int], ...]],
         ] = {}
         absent = -1
@@ -313,7 +330,19 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         for time_step in range(self.params.horizon):
             dt = self.params.timestep_duration_hours[time_step]
             load = self.params.load_kwh[time_step]
-            hour_key = (dt, load, self.params.oat_f[time_step], time_step in forced_on, time_step in forced_off)
+            # None: both modes are built and do not depend on hp_currently_on.
+            # A float: tracking is off, so the single mode-1 slice pays this many turn-on minutes.
+            collapsed_turn_on: float | None = None
+            if not self.params.heat_pump_mode_tracking_enabled:
+                collapsed_turn_on = self._turn_on_minutes(time_step, 1)
+            hour_key = (
+                dt,
+                load,
+                self.params.oat_f[time_step],
+                time_step in forced_on,
+                time_step in forced_off,
+                collapsed_turn_on,
+            )
             cached_hour = hours.get(hour_key)
             if cached_hour is not None:
                 self._available_actions_cache.append(cached_hour)
@@ -326,9 +355,11 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
             include_off = time_step not in forced_on
             off_idx = self._discrete_heat_to_store_index(0.0 - load - losses) if include_off else None
 
-            for mode in (0, 1):
+            track = self.params.heat_pump_mode_tracking_enabled
+            for mode in ((0, 1) if track else (1,)):
+                started_cold = mode == 0 if track else time_step == 0 and not self.params.hp_currently_on
                 max_hp = self._max_hp_for_energies(energies, time_step, mode, losses)
-                if mode == 0 and self.params.hp_min_kw_elec > 0:
+                if started_cold and self.params.hp_min_kw_elec > 0:
                     min_short = self._thermal_for_energies(
                         energies, time_step, self.params.hp_min_kw_elec * dt, losses
                     )
@@ -380,13 +411,14 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
                     key = (oi, ai, fi)
                     result = intern.get(key)
                     if result is None:
+                        next_off, next_on, next_fill = (0, 1, 0) if track else (1, 1, 1)
                         chosen: list[tuple[HeatPumpWaterTankAction, int]] = []
                         if oi >= 0:
-                            chosen.append((actions[oi], 0))
+                            chosen.append((actions[oi], next_off))
                         if ai >= 0:
-                            chosen.append((actions[ai], 1))
+                            chosen.append((actions[ai], next_on))
                         if fi >= 0:
-                            chosen.append((actions[fi], 0))
+                            chosen.append((actions[fi], next_fill))
                         result = tuple(chosen)
                         intern[key] = result
                     by_state_and_mode[(state_index, mode)] = result
@@ -397,9 +429,14 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
     def get_modes(self) -> list[int]:
         # 0: heat pump was off at the end of the previous step.
         # 1: heat pump ran at this step's full available power through the previous step.
+        # With tracking off the graph keeps only mode 1, so it is about half as large.
+        if not self.params.heat_pump_mode_tracking_enabled:
+            return [1]
         return [0, 1]
 
     def initial_mode(self) -> int:
+        if not self.params.heat_pump_mode_tracking_enabled:
+            return 1
         return 1 if self.params.hp_currently_on else 0
 
     def get_available_actions(
@@ -478,9 +515,7 @@ class HeatPumpWaterTankAsset(Asset[HeatPumpWaterTankState, HeatPumpWaterTankActi
         return elec_in_kwh * self.params.COP(self.params.oat_f[time_step], lwt)
 
     def _max_hp_heat_out_kwh(self, state: HeatPumpWaterTankState, time_step: int, mode: int) -> float:
-        dt = self.params.timestep_duration_hours[time_step]
-        turn_on_minutes = 0 if mode else self.params.hp_turn_on_minutes
-        max_hp_elec_in = (1 - min(turn_on_minutes, dt * 60) / (dt * 60)) * self.params.hp_max_kw_elec * dt
+        max_hp_elec_in = self._max_hp_elec_in_kwh(time_step, self._turn_on_minutes(time_step, mode))
         return self._thermal_kwh_for_elec_in(state, time_step, max_hp_elec_in)
 
     def initial_state(self) -> HeatPumpWaterTankState:

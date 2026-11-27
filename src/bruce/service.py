@@ -106,6 +106,19 @@ def experimental_knob[K: (bool, float, int)](tuning: FloTuningBruce, key: str, k
     return value
 
 
+def experimental_knob_or[K: (bool, float, int)](
+    tuning: FloTuningBruce, key: str, kind: type[K], default: K
+) -> K:
+    """``experimental_knob`` when ``key`` is present; ``default`` when it is not.
+
+    Experimental is an open dict. A message that predates a knob simply
+    leaves that key out, and the knob stays at the behavior it is replacing.
+    """
+    if key not in tuning.experimental:
+        return default
+    return experimental_knob(tuning, key, kind)
+
+
 def params_from_request(
     request: FloParams,
     *,
@@ -169,6 +182,7 @@ def params_from_request(
         rswt_penalty_decay_max_hour=tuning.rswt_penalty_decay_max_hour,
         unmet_load_penalty_enabled=experimental_knob(tuning, "UnmetLoadPenaltyEnabled", bool),
         unmet_load_penalty_weight=experimental_knob(tuning, "UnmetLoadPenaltyWeight", float),
+        heat_pump_mode_tracking_enabled=experimental_knob_or(tuning, "HeatPumpModeTrackingEnabled", bool, True),
         short_cycle_penalty_enabled=tuning.short_cycle_penalty_enabled,
         short_cycle_penalty_weight=tuning.short_cycle_penalty_weight,
         stability_penalty_enabled=tuning.stability_penalty_enabled,
